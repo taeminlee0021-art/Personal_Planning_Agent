@@ -5,24 +5,16 @@ from app.models import Proposal, Task
 from app.planning import KST, PlanBlock, Preferences, TimeRange, aware, candidate_slots, validate_plan
 
 
-class MockPlanningService:
-    def __init__(self, today: date | None = None, *, now: datetime | None = None):
-        # Inject a clock for repeatable tests; production reads real time on every validation.
-        self._now = aware(now) if now is not None else (
-            datetime.combine(today, time(), KST) if today is not None else None)
+class PlanningSnapshot:
+    persistent = False
+
+    def __init__(self, *, tasks, schedules, preferences, current_plan, now=None, mock_data=False):
+        self._now = aware(now) if now is not None else None
         self.today = self.current_time().date()
         self.monday = self.today - timedelta(days=self.today.weekday())
-        self.tasks: list[Task] = []
-        self.preferences = Preferences()
-        self.current_plan: list[PlanBlock] = []
-        for title, duration, count in [("Exercise", 60, 3), ("Resume", 60, 2), ("AI Agent study", 120, 2)]:
-            self.add_task(title, duration, "MEDIUM", count)
-        self.schedules = []
-        for day in range(5):
-            current = self.monday + timedelta(days=day)
-            self.schedules.append(self._event(f"work-{day}", "Work", current, 9, 18))
-            if day == 3:
-                self.schedules.append(self._event("dinner", "Thursday dinner", current, 19, 22))
+        self.tasks, self.schedules = tasks, schedules
+        self.preferences, self.current_plan = preferences, current_plan
+        self.mock_data = mock_data
 
     def current_time(self):
         return self._now if self._now is not None else datetime.now(KST)
@@ -63,7 +55,7 @@ class MockPlanningService:
                                self.fixed_ranges(), self.current_plan)
 
     def get_available_time_slots(self):
-        return {"fixture_only": False, "mock_data": True, "today": str(self.current_time().date()),
+        return {"fixture_only": False, "mock_data": self.mock_data, "today": str(self.current_time().date()),
                 "week_start": str(self.monday),
                 "note": "Calculated alternative starts. Candidates may overlap; the complete proposal is validated.",
                 "slots": self.slots}
@@ -86,10 +78,23 @@ class MockPlanningService:
         for block in self.current_plan + blocks:
             if self.monday <= block.time.start.date() < self.monday + timedelta(days=7):
                 counts[block.task_id] = counts.get(block.task_id, 0) + 1
-        return {"status": "PROPOSED_NOT_SAVED", "fixture_only": False, "mock_data": True,
+        return {"status": "PROPOSED_NOT_SAVED", "fixture_only": False, "mock_data": self.mock_data,
                 "explanation": proposal.explanation,
                 "blocks": [{"task_id": block.task_id, "title": tasks[block.task_id].title,
                             "start_datetime": block.time.start.isoformat(), "end_datetime": block.time.end.isoformat()}
                            for block in sorted(blocks, key=lambda block: block.time.start)],
                 "unallocated": [{"task_id": task.id, "remaining_count": task.weekly_target_count - counts.get(task.id, 0)}
                                 for task in self.tasks if task.status != "COMPLETED" and task.weekly_target_count > counts.get(task.id, 0)]}
+
+
+class MockPlanningService(PlanningSnapshot):
+    def __init__(self, today=None, *, now=None):
+        clock = now if now is not None else (datetime.combine(today, time(), KST) if today is not None else None)
+        super().__init__(tasks=[], schedules=[], preferences=Preferences(), current_plan=[], now=clock, mock_data=True)
+        for title, duration, count in [("Exercise", 60, 3), ("Resume", 60, 2), ("AI Agent study", 120, 2)]:
+            self.add_task(title, duration, "MEDIUM", count)
+        for day in range(5):
+            current = self.monday + timedelta(days=day)
+            self.schedules.append(self._event(f"work-{day}", "Work", current, 9, 18))
+            if day == 3:
+                self.schedules.append(self._event("dinner", "Thursday dinner", current, 19, 22))

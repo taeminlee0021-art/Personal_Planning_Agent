@@ -2,7 +2,7 @@
 import json
 
 NAMES = ("get_tasks", "get_fixed_schedules", "get_preferences", "get_current_plan", "get_available_time_slots")
-TOOLS = [{"type": "function", "name": name, "description": "Read mock " + name.removeprefix("get_"),
+TOOLS = [{"type": "function", "name": name, "description": "Read current application " + name.removeprefix("get_"),
           "parameters": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
           "strict": True} for name in NAMES]
 

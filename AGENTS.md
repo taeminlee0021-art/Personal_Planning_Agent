@@ -1079,3 +1079,54 @@ fixture-slot limitations; earlier entries remain historical records.
   fixed schedule protection, existing-plan budget/target use, stale proposals,
   no writes before approval, and direct entry without API calls.
 - Phase 2 complete after final verification. Do not start Phase 3 automatically.
+
+
+## 2026-09-09 - Phase 3 SQLite persistence
+
+The user authorized Phase 3. This entry supersedes the Phase 2 in-memory-only
+limitation. Phase 4 has not been started.
+
+- Added SQLAlchemy 2.0 as the sole new direct dependency for persistence,
+  explicit transactions and a portable table-based storage layer. SQLite remains
+  the database. SQLAlchemy Core is used; no unnecessary ORM abstraction.
+- Added tasks, schedules, singleton preferences and plans tables with relational
+  fields, foreign keys and basic check constraints. IDs are database-generated
+  and are not reused. Datetimes store UTC and are returned with explicit offsets;
+  CLI row output uses Asia/Seoul.
+- Added database.py (tables, connection/transaction management, Repository),
+  inputs.py (Pydantic structured writes), storage_service.py (application CRUD),
+  and tests/test_storage.py. Updated services.py, CLI, tool descriptions,
+  Agent wording, pyproject.toml, .gitignore and README.
+- CLI defaults to backend/data/planning.db; --database selects another file.
+  First run creates empty tables and default preferences only, no seeded tasks
+  or schedules. --demo explicitly preserves the former memory-only sample mode.
+- Direct CLI input supports task creation/edit/completion/deletion, fixed schedule
+  CRUD, preference editing, and manual plan creation/edit/completion/deletion.
+  These explicit user operations bypass the LLM and validate before saving.
+  Datetime input without an offset is explicitly labeled as Korean local time.
+- Agent read tools use DB services and no raw SQL/database handles enter prompts.
+  All Agent proposals remain PROPOSED_NOT_SAVED; no Agent write tools, pending
+  actions, approval execution, REST API or frontend were introduced.
+- Reused the Phase 2 engine through a shared PlanningSnapshot. DB reads obtain
+  consistent transaction snapshots and recompute the current week on each call.
+  Writes acquire BEGIN IMMEDIATE before reading/validating to serialize conflicts;
+  failures roll back the entire transaction, including related task status updates.
+- Linked plans prevent task deletion and scheduling-field edits. Fixed schedule
+  or preference edits that would invalidate saved plans are rejected.
+  Renaming a task does not retroactively rename stored plan titles.
+- Task PLANNED/TODO follows remaining planned blocks. Completing one block does
+  not complete the recurring task. Explicitly completing a task excludes it from
+  new proposals while preserving its existing blocks. Completed blocks still
+  count toward the week's target and daily time use.
+- Security retained: API keys are read only from backend environment/.env,
+  never stored in DB or intentionally logged/sent in prompts. SQL parameter
+  values are hidden on database errors. SQLite files and journal/WAL sidecars
+  are ignored by Git. Real paid API execution remains untested.
+- Verification: 82 offline tests passed on Python 3.14.5. Coverage includes
+  restart persistence for all four entities, direct CLI process restart,
+  database CRUD, input validation, foreign-key enforcement, rollback after a
+  second write fails, concurrent conflicting saves, stale proposal rejection,
+  unchanged DB after Agent reads/proposals, timezone round trips and week rollover.
+- Remaining limitations: no schema migrations yet (new schema is created only);
+  no DB authentication/encryption layer; this remains a local single-user app.
+  No push performed. Stop after Phase 3; Phase 4 requires the next user instruction.
