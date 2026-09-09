@@ -28,4 +28,4 @@ class Assignment(Model):
 
 class Proposal(Model):
     explanation: str = Field(min_length=1, max_length=4000)
-    assignments: list[Assignment] = Field(max_length=7)
+    assignments: list[Assignment] = Field(max_length=49)

@@ -1043,3 +1043,39 @@ secrets or claim planned work is already implemented.
   entry now trusts only this project path for normal Git use. Host Python defaults to 3.10;
   project virtual environment explicitly uses installed Python 3.14.5.
 - Stop after Phase 1; Phase 2 requires the user's next instruction.
+
+
+## 2026-09-09 - Phase 2 core planning engine
+
+The user authorized the next phase after Phase 1. This entry supersedes Phase 1
+fixture-slot limitations; earlier entries remain historical records.
+
+- Added backend/app/planning.py with immutable, timezone-aware half-open TimeRange,
+  overlap detection, busy-range subtraction, validated planning preferences,
+  daily budget accounting, available intervals, candidate generation and full
+  additive plan validation. No new dependencies.
+- All dates normalize to Asia/Seoul (+09:00). Naive datetimes and invalid or
+  overnight preference windows are rejected. Fixed events can cross midnight.
+  Touching activities are allowed. Existing cross-midnight plans consume each
+  day's proportional budget. Fixed schedules occupy time but do not consume
+  personal planning minutes.
+- Replaced authored slots with calculated candidates excluding fixed events and
+  existing plans. Today's remaining time is included. Candidate starts use the
+  first whole minute of each free interval, then 30-minute clock boundaries.
+  This limits model context; it is not exhaustive minute-by-minute scheduling.
+- Candidates are alternatives and may overlap. Backend revalidates the complete
+  proposal against current data and time, availability hours, fixed schedules,
+  existing/proposed overlaps, duration, deadlines, weekly targets and daily limit.
+  Existing plans count toward weekly targets and daily minutes.
+- Data remains in memory, with a frozen week per CLI session. Restart a session
+  after the week changes. No database, REST API, approval writes, or frontend added.
+  Task duration remains 1-120 minutes in the CLI; proposals allow up to 49 blocks.
+- API key handling is unchanged: backend environment only, .env ignored, no key
+  in prompts, output or application logs. No real paid API calls were performed.
+- Updated service integration, Agent instructions, CLI phase label, existing
+  tests and README. Added backend/tests/test_engine.py.
+- Verification: 54 offline tests passed on Python 3.14.5, including time boundary,
+  timezone, overlapping/nested busy ranges, current-day availability, weekend,
+  fixed schedule protection, existing-plan budget/target use, stale proposals,
+  no writes before approval, and direct entry without API calls.
+- Phase 2 complete after final verification. Do not start Phase 3 automatically.

@@ -56,7 +56,7 @@ def menu(service):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Phase 1 PlanningAgent: 저장되지 않는 모의 계획")
+    parser = argparse.ArgumentParser(description="Phase 2 PlanningAgent: 저장되지 않는 모의 계획")
     parser.add_argument("--request", help="자연어 요청을 한 번 실행")
     parser.add_argument("--show-data", action="store_true", help="API 호출 없이 모의 데이터 조회")
     parser.add_argument("--trace", action="store_true", help="내용 대신 메타데이터와 사용량 로그 출력")

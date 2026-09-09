@@ -38,11 +38,11 @@ def test_read_tools_and_allowlist(service):
         execute(service, "get_tasks", '{"id":1}')
 
 
-def test_authored_slots_respect_fixture_schedules(service):
+def test_calculated_slots_respect_fixture_schedules(service):
     for slot in service.slots:
         start, end = map(datetime.fromisoformat, [slot["start_datetime"], slot["end_datetime"]])
-        assert start.date() > service.today
-        assert (end - start).total_seconds() == 7200
+        assert start.date() >= service.today
+        assert 0 < (end - start).total_seconds() <= 7200
         for event in service.schedules:
             assert not (start < datetime.fromisoformat(event["end_datetime"])
                         and datetime.fromisoformat(event["start_datetime"]) < end)
@@ -50,16 +50,16 @@ def test_authored_slots_respect_fixture_schedules(service):
 
 def test_proposal_is_not_saved(service):
     before = deepcopy(service.__dict__)
-    result = service.render_proposal(Proposal(explanation="Example", assignments=[{"task_id": 1, "slot_id": "slot-1"}]))
+    result = service.render_proposal(Proposal(explanation="Example", assignments=[{"task_id": 1, "slot_id": "2026-09-08T19:00:00+09:00"}]))
     assert result["status"] == "PROPOSED_NOT_SAVED"
-    assert result["blocks"][0]["end_datetime"] == "2026-09-08T21:00:00+09:00"
+    assert result["blocks"][0]["end_datetime"] == "2026-09-08T20:00:00+09:00"
     assert service.__dict__ == before
 
 
 @pytest.mark.parametrize("assignments", [
-    [{"task_id": 999, "slot_id": "slot-1"}],
+    [{"task_id": 999, "slot_id": "2026-09-08T19:00:00+09:00"}],
     [{"task_id": 1, "slot_id": "invented"}],
-    [{"task_id": 1, "slot_id": "slot-1"}, {"task_id": 2, "slot_id": "slot-1"}],
+    [{"task_id": 1, "slot_id": "2026-09-08T19:00:00+09:00"}, {"task_id": 2, "slot_id": "2026-09-08T19:00:00+09:00"}],
 ])
 def test_invalid_assignments_rejected(service, assignments):
     with pytest.raises(ValueError):
@@ -68,7 +68,7 @@ def test_invalid_assignments_rejected(service, assignments):
 
 def test_deadline_and_completed_protection(service):
     service.tasks[0].due_date = date(2026, 9, 7)
-    proposal = Proposal(explanation="Example", assignments=[{"task_id": 1, "slot_id": "slot-1"}])
+    proposal = Proposal(explanation="Example", assignments=[{"task_id": 1, "slot_id": "2026-09-08T19:00:00+09:00"}])
     with pytest.raises(ValueError):
         service.render_proposal(proposal)
     service.tasks[0].due_date = None
@@ -81,7 +81,7 @@ def test_weekly_target_protection(service):
     service.tasks[0].weekly_target_count = 1
     with pytest.raises(ValueError):
         service.render_proposal(Proposal(explanation="Example", assignments=[
-            {"task_id": 1, "slot_id": "slot-1"}, {"task_id": 1, "slot_id": "slot-2"}]))
+            {"task_id": 1, "slot_id": "2026-09-08T19:00:00+09:00"}, {"task_id": 1, "slot_id": "2026-09-09T19:00:00+09:00"}]))
 
 
 def response(output=(), text=""):
@@ -94,7 +94,7 @@ def test_agent_calls_tools_then_returns_validated_proposal(service):
     client = Mock()
     client.responses.create.side_effect = [
         response(calls),
-        response(text='{"explanation":"Example","assignments":[{"task_id":1,"slot_id":"slot-1"}]}'),
+        response(text='{"explanation":"Example","assignments":[{"task_id":1,"slot_id":"2026-09-08T19:00:00+09:00"}]}'),
     ]
     before = deepcopy(service.__dict__)
     result = PlanningAgent(client, "test-model", service).run("Plan my week")
@@ -121,9 +121,9 @@ def test_agent_round_limit(service):
     assert client.responses.create.call_count == 2
 
 
-def test_sunday_has_no_remaining_fixture_slots():
+def test_sunday_has_remaining_slots():
     service = MockPlanningService(date(2026, 9, 13))
-    assert service.slots == []
+    assert service.slots
 
 
 def test_direct_entry_does_not_call_api(service, monkeypatch, capsys):
