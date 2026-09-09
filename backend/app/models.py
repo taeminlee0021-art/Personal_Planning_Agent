@@ -7,16 +7,19 @@ class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-class Task(Model):
-    id: int = Field(gt=0)
+class TaskFields(Model):
     title: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2000)
     estimated_minutes: int = Field(gt=0, le=120)
     priority: Literal["LOW", "MEDIUM", "HIGH"] = "MEDIUM"
     due_date: date | None = None
     status: Literal["TODO", "PLANNED", "COMPLETED"] = "TODO"
-    category: str = "personal"
+    category: str = Field(default="personal", max_length=120)
     weekly_target_count: int = Field(default=1, ge=1, le=7)
+
+
+class Task(TaskFields):
+    id: int = Field(gt=0)
     created_at: datetime
     updated_at: datetime
 

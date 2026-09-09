@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "personal-planning-agent"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["openai>=2,<3", "pydantic>=2.10,<3", "python-dotenv>=1,<2", "SQLAlchemy>=2.0,<2.1"]
+dependencies = ["openai>=2,<3", "pydantic>=2.10,<3", "python-dotenv>=1,<2", "SQLAlchemy>=2.0,<2.1", "fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10"]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1"]
 
 [project.scripts]
 planning-agent = "app.cli:main"

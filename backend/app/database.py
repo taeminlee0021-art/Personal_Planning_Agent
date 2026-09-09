@@ -8,6 +8,7 @@ from sqlalchemy import (
     MetaData, String, Table, Time, URL, create_engine, event, select,
 )
 from sqlalchemy.types import TypeDecorator
+from app.errors import NotFoundError
 
 
 class UTCDateTime(TypeDecorator):
@@ -130,7 +131,7 @@ class Repository:
     def get(self, table, identifier):
         row = self.connection.execute(select(table).where(table.c.id == identifier)).mappings().first()
         if row is None:
-            raise ValueError(f"{table.name} item not found")
+            raise NotFoundError(f"{table.name} item not found")
         return dict(row)
 
     def insert(self, table, values):

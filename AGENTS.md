@@ -1130,3 +1130,50 @@ limitation. Phase 4 has not been started.
 - Remaining limitations: no schema migrations yet (new schema is created only);
   no DB authentication/encryption layer; this remains a local single-user app.
   No push performed. Stop after Phase 3; Phase 4 requires the next user instruction.
+
+
+## 2026-09-09 - Phase 4 FastAPI REST layer
+
+The user authorized Phase 4. Phase 5 approval actions and Phase 6 product UI have
+not been started.
+
+- Added FastAPI for HTTP routing, validation and generated OpenAPI documentation;
+  Uvicorn for the local ASGI server. Declared httpx explicitly as a test dependency.
+  Existing SQLAlchemy storage and deterministic planning services remain in charge.
+- Added app/main.py, api/{routes,schemas,__init__}.py, errors.py and test_api.py.
+  Updated shared task fields, storage service creation fields and today query,
+  repository not-found error type, dependency definitions and README.
+- Exposed task CRUD, schedule create/list/update/delete, preference get/replace,
+  plan all/today/week queries and POST /api/agent/messages. Task PUT updates only
+  supplied fields; due_date=null clears its deadline. Preference PUT replaces
+  settings and uses defaults for omitted fields. New API tasks start as TODO.
+- API plan writes and Agent approval/rejection endpoints remain absent. Existing
+  explicit manual CLI writes remain available. Agent requests return validated
+  PROPOSED_NOT_SAVED proposals without modifying stored plans.
+- All endpoints use Pydantic request/response schemas, reject unknown body fields
+  and require explicit datetime offsets. Today/week queries use Asia/Seoul.
+  Not found maps to 404, conflicts 409, validation 422, Agent failure 502,
+  DB/config unavailability 503 and unexpected failures 500.
+- Error responses use a documented error.code/error.message envelope. Rejected
+  input values, raw external API responses, SQL parameters and exception payloads
+  are not echoed. Middleware handles unexpected errors before raw ASGI logging;
+  logs retain error type only. Responses use Cache-Control: no-store.
+- API key/model are read only on the backend. Request schemas provide no API-key
+  field, .env is not served, and keys never enter Agent prompt/tool input or DB.
+  No real paid OpenAI call was made; SDK calls were mocked in integration tests.
+- Application factory/lifespan defers DB creation until server startup and closes
+  the engine on shutdown. Synchronous DB/Agent routes use FastAPI's worker pool;
+  no write transaction spans an external API call. CLI and server share the
+  default backend/data/planning.db file. No authentication/CORS/public hosting.
+- Run locally: python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+  using the project virtual environment. /docs is development API documentation,
+  not the eventual responsive web UI.
+- Verification: 124 offline tests passed on Python 3.14.5. Coverage includes HTTP
+  CRUD and restart persistence, rollback on conflicts, status codes, explicit
+  timezone inputs, today/week reads, Agent tool-loop/no-write behavior, OpenAPI,
+  malformed/upstream/internal errors and fake-secret non-disclosure.
+  Actual Uvicorn loopback HTTP create/read/delete/today/docs smoke passed using
+  a temporary DB; the temporary server stopped cleanly, real app DB untouched.
+- Known issue: two upstream Starlette test-client deprecation warnings (httpx and
+  AnyIO BlockingPortal); tests pass. No schema migrations, product web UI or
+  approval execution yet. No Git push. Stop after Phase 4.

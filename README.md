@@ -1,7 +1,7 @@
 # Personal Planning Agent
 
 자연어 요청·메뉴 선택·직접 입력을 지원하는 개인 계획 Agent입니다.
-현재 **Phase 3: SQLite 저장 기능**까지 구현했습니다. FastAPI와 웹 화면은 이후 단계입니다.
+현재 **Phase 4: FastAPI REST API**까지 구현했습니다. 웹 화면은 Phase 6에서 구현합니다.
 
 ## 설치 및 실행
 
@@ -31,6 +31,73 @@ CLI를 종료해도 직접 입력한 데이터가 유지됩니다.
 # 오프라인 테스트
 .\.venv\Scripts\python.exe -m pytest backend/tests -q
 ```
+
+## FastAPI 서버 실행
+
+프로젝트 루트에서 의존성을 갱신한 뒤 실행하세요. CLI와 같은 SQLite 파일을 사용합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e "./backend[dev]"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+서버 실행 후 [API 문서](http://127.0.0.1:8000/docs)에서 요청을 시험할 수 있습니다.
+이 화면은 개발용 API 문서이며 제품의 웹 화면은 Phase 6에서 구현합니다.
+Ctrl+C로 서버를 종료합니다. 현재 인증이 없는 로컬 단일 사용자 모드이므로
+127.0.0.1에 바인딩합니다. 공개 배포와 프론트엔드 CORS 설정은 아직 추가하지 않았습니다.
+
+| 메서드 | 경로 | 기능 |
+| --- | --- | --- |
+| POST / GET | /api/tasks | 할 일 생성 / 목록 |
+| GET / PUT / DELETE | /api/tasks/{id} | 조회 / 수정 / 삭제 |
+| POST / GET | /api/schedules | 고정 일정 생성 / 목록 |
+| PUT / DELETE | /api/schedules/{id} | 고정 일정 수정 / 삭제 |
+| GET / PUT | /api/preferences | 선호도 조회 / 교체 |
+| GET | /api/plans | 전체 저장 계획 조회 |
+| GET | /api/plans/today | 한국 시간 기준 오늘 계획 |
+| GET | /api/plans/week | 한국 시간 기준 이번 주 계획 |
+| POST | /api/agent/messages | 저장되지 않는 Agent 초안 요청 |
+
+계획의 직접 추가·수정·삭제는 기존 CLI에서 사용합니다. Agent 승인/거절 API와
+승인 후 실행은 Phase 5 범위이며 아직 없습니다. 날짜·시간 요청은 ISO 8601 형식으로
+시간대 오프셋을 포함해야 합니다. 예: `2026-09-10T19:00:00+09:00`.
+
+할 일 생성 예시는 다음과 같습니다. API 키는 요청 본문이나 헤더에 넣지 않습니다.
+
+```powershell
+$taskBody = @{ title = "Exercise"; estimated_minutes = 60; weekly_target_count = 3 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/tasks -ContentType application/json -Body $taskBody
+Invoke-RestMethod -Uri http://127.0.0.1:8000/api/plans/week
+```
+
+Agent 요청 본문은 `{"message":"이번 주 계획을 세워주세요."}`입니다.
+키와 모델은 서버의 backend/.env 또는 환경변수에서만 설정합니다.
+
+PUT /tasks/{id}는 전달한 항목만 수정하며, `due_date: null`은 마감일을 지웁니다.
+다른 필드의 null과 빈 수정 요청은 거부합니다. 새 할 일은 TODO 상태로 생성합니다.
+PUT /preferences는 전체 교체이며 생략된 필드는 기본값으로 돌아갑니다.
+응답 전용 `timezone` 필드는 선호도 PUT 본문에 포함하지 않습니다.
+
+오류는 `{"error":{"code":"...","message":"..."}}` 형식입니다.
+
+- 404: 항목 없음
+- 409: 일정 충돌 또는 제약 위반
+- 422: 입력 검증 실패
+- 502: 외부 Agent 호출 실패 또는 유효한 초안 생성 실패
+- 503: DB 사용 실패 또는 서버 OpenAI 설정 누락
+- 500: 내부 오류
+
+검증 오류에 원문 입력을 돌려주지 않으며, 외부 API 오류·SQL·예외 전문도 반환하거나
+로그에 남기지 않습니다. 응답 모델로 반환 필드를 제한하고 Cache-Control: no-store를
+설정합니다. 서버 모듈을 import할 때 DB나 API 클라이언트를 생성하지 않습니다.
+DB 연결은 서버 시작 시 열고 종료 시 정리합니다.
+
+검증: 전체 테스트 124개 통과 및 임시 DB/로컬 포트를 사용한 실제 Uvicorn HTTP 점검 완료.
+현재 설치된 Starlette 테스트 클라이언트에서 httpx 및 AnyIO 사용 중단 예정 경고가
+2개 발생합니다. 테스트 실패는 아니며 경고를 숨기거나 의존성을 임의로 변경하지 않았습니다.
+
+참고: [FastAPI Lifespan](https://fastapi.tiangolo.com/advanced/events/),
+[FastAPI 오류 처리](https://fastapi.tiangolo.com/tutorial/handling-errors/).
 
 ## CLI 메뉴
 
@@ -128,9 +195,8 @@ Agent에는 각 빈 구간의 첫 정수 분 시각과 이후 30분 경계의 �
 미배치 목표는 unallocated로 표시합니다. DB 모드는 조회 시 현재 주를 다시 계산합니다.
 일정이 바뀌거나 시간이 지나 초안이 무효가 되면 재요청해야 합니다.
 
-현재는 단일 사용자 로컬 CLI이며 DB 스키마 자동 마이그레이션, REST API,
-승인 액션과 웹 화면은 없습니다. DB 스키마 변경이 필요하면 별도 마이그레이션 작업이
-필요합니다. 백업은 CLI를 종료한 후 SQLite 파일을 복사하세요.
+현재는 단일 사용자 로컬 CLI/API이며 DB 스키마 자동 마이그레이션, 승인 액션과 웹 화면은 없습니다. DB 스키마 변경이 필요하면 별도 마이그레이션 작업이
+필요합니다. 백업은 CLI와 API 서버를 모두 종료한 후 SQLite 파일을 복사하세요.
 
 ## Git과 다음 단계
 
@@ -138,6 +204,6 @@ Agent에는 각 빈 구간의 첫 정수 분 시각과 이후 30분 경계의 �
 기본 브랜치는 main이며 자동 push는 하지 않습니다.
 .env, 가상환경, 로그, SQLite 파일과 임시 저널 파일은 Git에서 제외합니다.
 
-Phase 1 CLI → Phase 2 계획 엔진 → **Phase 3 DB** → Phase 4 FastAPI →
+Phase 1 CLI → Phase 2 계획 엔진 → Phase 3 DB → **Phase 4 FastAPI** →
 Phase 5 승인 → Phase 6 반응형 웹 → Phase 7 배포.
 각 단계 완료 후 AGENTS.md를 갱신하고 다음 지시를 기다립니다.

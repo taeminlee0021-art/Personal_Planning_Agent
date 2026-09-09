@@ -2,6 +2,7 @@
 from datetime import datetime, time, timedelta
 
 from app import database as db
+from app.errors import ConflictError
 from app.inputs import ManualPlanInput, ScheduleInput
 from app.models import Proposal, Task
 from app.planning import KST, PlanBlock, Preferences, TimeRange, aware, daily_minutes, validate_plan
@@ -55,10 +56,11 @@ class DatabasePlanningService:
         with self.database.transaction() as repository:
             return Task.model_validate(repository.get(db.tasks, identifier))
 
-    def add_task(self, title, minutes, priority="MEDIUM", count=1):
+    def add_task(self, title, minutes, priority="MEDIUM", count=1, *, description="", due_date=None, category="personal"):
         now = self.current_time()
         task = Task(id=1, title=title, estimated_minutes=minutes, priority=priority,
-                    weekly_target_count=count, created_at=now, updated_at=now)
+                    weekly_target_count=count, created_at=now, updated_at=now,
+                    description=description, due_date=due_date, category=category)
         with self.database.transaction(write=True) as repository:
             return Task.model_validate(repository.insert(db.tasks, task.model_dump(exclude={"id"})))
 
@@ -66,7 +68,7 @@ class DatabasePlanningService:
         allowed = {"title", "description", "estimated_minutes", "priority", "due_date",
                    "status", "category", "weekly_target_count"}
         if changes.keys() - allowed:
-            raise ValueError("Unsupported task field")
+            raise ConflictError("Unsupported task field")
         with self.database.transaction(write=True) as repository:
             old = repository.get(db.tasks, identifier)
             task = Task.model_validate({**old, **changes, "updated_at": self.current_time()})
@@ -74,18 +76,18 @@ class DatabasePlanningService:
             if "status" in changes and task.status != "COMPLETED":
                 expected = "PLANNED" if any(row["status"] == "PLANNED" for row in linked) else "TODO"
                 if task.status != expected:
-                    raise ValueError("Task status must agree with saved plans")
+                    raise ConflictError("Task status must agree with saved plans")
             # Keep already saved blocks stable; user can explicitly edit/delete them first.
             if linked and any(task.model_dump()[key] != old[key] for key in
                               ("estimated_minutes", "due_date", "weekly_target_count")):
-                raise ValueError("Edit linked plans before changing duration, deadline or target")
+                raise ConflictError("Edit linked plans before changing duration, deadline or target")
             return Task.model_validate(repository.update(
                 db.tasks, identifier, task.model_dump(exclude={"id"})))
 
     def delete_task(self, identifier):
         with self.database.transaction(write=True) as repository:
             if repository.list(db.plans, db.plans.c.task_id == identifier):
-                raise ValueError("Delete linked plans before deleting this task")
+                raise ConflictError("Delete linked plans before deleting this task")
             repository.delete(db.tasks, identifier)
 
     def get_fixed_schedules(self):
@@ -99,9 +101,11 @@ class DatabasePlanningService:
     def save_schedule(self, value: ScheduleInput, identifier=None):
         value = ScheduleInput.model_validate(value.model_dump())
         with self.database.transaction(write=True) as repository:
+            if identifier is not None:
+                repository.get(db.schedules, identifier)
             span = TimeRange(value.start_datetime, value.end_datetime)
             if any(span.overlaps(block(row).time) for row in repository.list(db.plans)):
-                raise ValueError("Fixed schedule conflicts with a saved plan")
+                raise ConflictError("Fixed schedule conflicts with a saved plan")
             row = (repository.insert(db.schedules, value.model_dump()) if identifier is None else
                    repository.update(db.schedules, identifier, value.model_dump()))
             return json_row(row)
@@ -124,10 +128,10 @@ class DatabasePlanningService:
             for item in future:
                 window = value.window(item.time.start.date())
                 if item.time.start < window.start or item.time.end > window.end:
-                    raise ValueError("Preferences would invalidate a saved plan")
+                    raise ConflictError("Preferences would invalidate a saved plan")
             for day in {item.time.start.date() for item in future}:
                 if daily_minutes(day, existing) > value.max_daily_planning_minutes:
-                    raise ValueError("Preferences would exceed the daily planning limit")
+                    raise ConflictError("Preferences would exceed the daily planning limit")
             repository.update(db.preferences, 1, value.model_dump())
         return {**value.model_dump(mode="json"), "timezone": "Asia/Seoul"}
 
@@ -137,6 +141,14 @@ class DatabasePlanningService:
             start = datetime.combine(snapshot.monday, time(), KST)
             return [json_row(row) for row in repository.list(
                 db.plans, db.plans.c.start_datetime < start + timedelta(days=7),
+                db.plans.c.end_datetime > start)]
+
+    def get_today_plan(self):
+        now = self.current_time()
+        start = datetime.combine(now.date(), time(), KST)
+        with self.database.transaction() as repository:
+            return [json_row(row) for row in repository.list(
+                db.plans, db.plans.c.start_datetime < start + timedelta(days=1),
                 db.plans.c.end_datetime > start)]
 
     def list_plans(self):
@@ -162,7 +174,7 @@ class DatabasePlanningService:
             week_end = week_start + timedelta(days=7)
             old = repository.get(db.plans, identifier) if identifier is not None else None
             if old and old["status"] == "COMPLETED":
-                raise ValueError("Completed plan cannot be moved")
+                raise ConflictError("Completed plan cannot be moved")
             existing_rows = repository.list(
                 db.plans, db.plans.c.start_datetime < week_end, db.plans.c.end_datetime > week_start)
             existing = [block(row) for row in existing_rows if row["id"] != identifier]
