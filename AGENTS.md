@@ -1013,7 +1013,8 @@ secrets or claim planned work is already implemented.
 - User requirement: support natural language, selection, and direct field entry.
 - Local Git initialized on main; origin points to
   https://github.com/taeminlee0021-art/Personal_Planning_Agent.git.
-  Remote was empty when inspected. No push has been performed.
+  Remote was empty when inspected. Initial local commit: 1b7b277.
+  No push has been performed.
 - Implemented a single PlanningAgent using the official OpenAI Python SDK
   Responses API; five allowlisted read tools delegate to MockPlanningService.
 - CLI supports free text, a preset planning request, direct task entry,
@@ -1034,9 +1035,11 @@ secrets or claim planned work is already implemented.
   backend/pyproject.toml, backend/.env.example, backend/tests/test_planning.py,
   root .gitignore and README.md.
 - Verification: 19 offline tests passed with Python 3.14.5.
+  CLI --show-data and Git ignore checks passed; staged whitespace check passed.
   Real paid API invocation has not been tested.
 - Environment: sandbox Git creation caused helper refresh errors and differing
   ownership; subsequent work used approved host execution with per-command
-  Git safe.directory restricted to this project. Host Python defaults to 3.10;
+  Git safe.directory restricted to this project. A persistent safe.directory
+  entry now trusts only this project path for normal Git use. Host Python defaults to 3.10;
   project virtual environment explicitly uses installed Python 3.14.5.
 - Stop after Phase 1; Phase 2 requires the user's next instruction.
