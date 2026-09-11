@@ -3,7 +3,7 @@ services:
     name: personal-planning-agent-api
     runtime: python
     region: singapore
-    plan: 0.5c-512mb
+    plan: free
     rootDir: backend
     buildCommand: pip install .
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -16,9 +16,5 @@ services:
         value: gpt-5-nano
       - key: APP_INTERNAL_TOKEN
         sync: false
-      - key: PLANNING_DATABASE_PATH
-        value: /var/data/planning.db
-    disk:
-      name: planning-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: DATABASE_URL
+        sync: false

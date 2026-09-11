@@ -65,6 +65,34 @@ def test_restart_preserves_all_entities_and_no_seed(service):
         reopened.close()
 
 
+def test_postgresql_url_selects_psycopg(monkeypatch):
+    captured = {}
+
+    class FakeEngine:
+        def dispose(self):
+            pass
+
+    def fake_create_engine(url, **options):
+        captured["url"] = url
+        captured["options"] = options
+        return FakeEngine()
+
+    monkeypatch.setattr(db, "create_engine", fake_create_engine)
+    monkeypatch.setattr(db.metadata, "create_all", lambda engine: None)
+
+    database = db.Database(
+        "postgresql://planner:p%40ss@example.neon.tech/planning?sslmode=require"
+    )
+
+    assert captured["url"] == (
+        "postgresql+psycopg://planner:p%40ss@example.neon.tech/"
+        "planning?sslmode=require"
+    )
+    assert captured["options"]["pool_pre_ping"] is True
+    assert captured["options"]["hide_parameters"] is True
+    assert database.path is None
+
+
 def test_task_crud_and_id_not_reused(service):
     task = service.add_task("Exercise", 60)
     updated = service.update_task(task.id, title="Piano", priority="HIGH", due_date="2026-09-10")

@@ -1287,3 +1287,24 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - Generated a random local server-to-server token in ignored backend/.env and frontend/.env.local. The previously pasted OpenAI key remains compromised and must be revoked and replaced locally before production deployment.
 - Verification: a real gpt-5-nano tool-calling proposal completed; 154 backend tests passed with the existing two upstream warnings; TypeScript checking and the production Vinext build passed. Local security smoke returned /health 200, direct unauthenticated backend API 401 and authenticated frontend proxy 200.
 - Remaining external blockers: revoke/create an OpenAI key, approve a paid persistent Render service, enter OPENAI_API_KEY and APP_INTERNAL_TOKEN in Render, then provide its URL for Sites BACKEND_API_URL and private publication. Browser automation was unavailable, so these account and payment steps were not performed automatically.
+
+## 2026-09-11 - Free cloud deployment path
+
+- The user chose the no-cost cloud option after rotating the previously exposed API key.
+- Kept SQLite as the local default and added production PostgreSQL support through
+  DATABASE_URL. Standard postgres/postgresql URLs are normalized to SQLAlchemy's
+  psycopg 3 driver; credentials remain out of logs and source control.
+- UTC timestamps use timezone-aware PostgreSQL columns while retaining the existing
+  SQLite round-trip behavior. The fixed-schedule check is portable across both
+  databases. PostgreSQL writes take a transaction-scoped advisory lock so approval
+  validation retains the existing single-writer invariant.
+- Added psycopg 3 as the only new backend dependency. DATABASE_URL takes precedence
+  over the optional local PLANNING_DATABASE_PATH.
+- Changed render.yaml to the free Singapore web-service plan, removed the paid
+  persistent disk, and made DATABASE_URL a required deployment secret. Durable
+  production data is intended for Neon Free PostgreSQL.
+- Verification: 155 backend tests passed on Python 3.14.5 with the same two upstream
+  warnings. PostgreSQL metadata compiled successfully into nine DDL statements.
+- External deployment still requires creating/selecting the user's Neon project,
+  entering its connection string and the backend secrets in Render, then setting
+  the deployed backend URL in Sites and privately publishing the registered frontend.

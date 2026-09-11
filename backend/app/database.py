@@ -1,4 +1,4 @@
-"""SQLite persistence; no database operations are exposed as Agent tools."""
+"""SQLAlchemy persistence; no database operations are exposed as Agent tools."""
 from contextlib import contextmanager
 from datetime import timezone
 from pathlib import Path
@@ -12,19 +12,27 @@ from app.errors import NotFoundError
 
 
 class UTCDateTime(TypeDecorator):
-    """Store UTC (SQLite drops offsets), restore aware UTC on every read."""
+    """Store UTC and restore an aware UTC value on every supported database."""
     impl = DateTime
     cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        return dialect.type_descriptor(DateTime(timezone=dialect.name != "sqlite"))
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Timezone-aware datetime required")
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+        value = value.astimezone(timezone.utc)
+        return value.replace(tzinfo=None) if dialect.name == "sqlite" else value
 
     def process_result_value(self, value, dialect):
-        return value.replace(tzinfo=timezone.utc) if value is not None else None
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 metadata = MetaData()
@@ -56,7 +64,7 @@ schedules = Table(
     Column("description", String(2000), nullable=False),
     Column("fixed", Boolean, nullable=False),
     CheckConstraint("end_datetime > start_datetime"),
-    CheckConstraint("fixed = 1"),
+    CheckConstraint("fixed"),
     sqlite_autoincrement=True,
 )
 preferences = Table(
@@ -107,26 +115,44 @@ pending_actions = Table(
 
 
 class Database:
-    def __init__(self, path: str | Path):
-        self.path = Path(path).resolve()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(
-            URL.create("sqlite", database=str(self.path)),
-            connect_args={"timeout": 5}, hide_parameters=True,
-        )
+    def __init__(self, location: str | Path):
+        raw_location = str(location)
+        self.is_sqlite = "://" not in raw_location
+        self.path = Path(raw_location).resolve() if self.is_sqlite else None
+        if self.is_sqlite:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            url = URL.create("sqlite", database=str(self.path))
+            engine_options = {"connect_args": {"timeout": 5}}
+        else:
+            # Neon supplies a standard PostgreSQL URL. Select psycopg 3 explicitly.
+            if raw_location.startswith("postgres://"):
+                raw_location = "postgresql://" + raw_location[len("postgres://"):]
+            if raw_location.startswith("postgresql://"):
+                raw_location = "postgresql+psycopg://" + raw_location[len("postgresql://"):]
+            url = raw_location
+            engine_options = {"pool_pre_ping": True}
 
-        @event.listens_for(self.engine, "connect")
-        def configure(connection, _):
-            connection.isolation_level = None
-            connection.execute("PRAGMA foreign_keys=ON")
+        self.engine = create_engine(url, hide_parameters=True, **engine_options)
+
+        if self.is_sqlite:
+            @event.listens_for(self.engine, "connect")
+            def configure(connection, _):
+                connection.isolation_level = None
+                connection.execute("PRAGMA foreign_keys=ON")
 
         metadata.create_all(self.engine)
 
     @contextmanager
     def transaction(self, *, write=False):
         with self.engine.connect() as connection:
-            # Serialize SQLite writes before reading constraints; rollback every failure.
-            connection.exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
+            if self.is_sqlite:
+                # Serialize SQLite writes before reading constraints.
+                connection.exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
+            else:
+                connection.begin()
+                if write:
+                    # Preserve the single-writer invariant used by approval validation.
+                    connection.exec_driver_sql("SELECT pg_advisory_xact_lock(731942611)")
             try:
                 yield Repository(connection)
                 connection.commit()

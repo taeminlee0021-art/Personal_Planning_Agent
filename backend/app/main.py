@@ -55,8 +55,12 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
     @asynccontextmanager
     async def lifespan(app):
         load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+        configured_url = os.getenv("DATABASE_URL", "").strip()
         configured_path = os.getenv("PLANNING_DATABASE_PATH", "").strip()
-        database = Database(database_path or configured_path or Path(__file__).resolve().parents[1] / "data" / "planning.db")
+        database = Database(
+            database_path or configured_url or configured_path
+            or Path(__file__).resolve().parents[1] / "data" / "planning.db"
+        )
         try:
             app.state.service = DatabasePlanningService(database, now=now)
             app.state.agent_runner = agent_runner or run_agent

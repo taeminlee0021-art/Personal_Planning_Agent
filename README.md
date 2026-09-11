@@ -195,7 +195,8 @@ Agent 계획 요청만 OpenAI API를 호출하며 비용이 발생합니다.
 OPENAI_API_KEY=본인의 키
 OPENAI_MODEL=gpt-5-nano
 APP_INTERNAL_TOKEN=배포 시 프론트엔드와 공유할 임의의 서버 비밀값
-PLANNING_DATABASE_PATH=배포 시 영구 디스크의 planning.db 경로
+DATABASE_URL=배포 시 Neon PostgreSQL 연결 문자열
+PLANNING_DATABASE_PATH=로컬 SQLite 경로를 바꿀 때만 사용
 ```
 
 키를 채팅이나 Git에 올리지 마세요. 키는 백엔드 환경변수에서만 읽으며,
@@ -207,13 +208,13 @@ DB·프론트엔드·Agent 프롬프트·응답·로그에 기록하지 않습�
 ```
 
 trace는 요청 길이, 도구명, 결과 길이, 사용량, 오류 종류와 소요 시간을 기록합니다.
-개인 입력과 도구 결과 전문을 기록하지 않습니다. 실제 유료 API 호출은 아직 검증하지
-않았으며, 테스트는 모의 API 응답을 사용합니다.
+개인 입력과 도구 결과 전문을 기록하지 않습니다. gpt-5-nano의 실제 도구 호출은 합성
+데이터로 검증했으며, 자동 테스트는 비용이 들지 않는 모의 API 응답을 사용합니다.
 
 ## 저장 구조와 검증
 
 - `backend/app/actions.py`: 대기 제안, 변경 전후 검토, 원자적 승인·거절.
-- `backend/app/database.py`: SQLAlchemy Core 테이블, SQLite 연결, 트랜잭션, Repository.
+- `backend/app/database.py`: SQLAlchemy Core 테이블, SQLite/PostgreSQL 연결, 트랜잭션, Repository.
 - `backend/app/storage_service.py`: 할 일·일정·선호도·수동 계획 CRUD와 DB 기반 조회 도구 서비스.
 - `backend/app/inputs.py`: 고정 일정과 수동 계획의 Pydantic 입력 검증.
 - `backend/app/services.py`: DB와 데모가 공유하는 계획 스냅샷 및 초안 검증.
@@ -225,9 +226,10 @@ trace는 요청 길이, 도구명, 결과 길이, 사용량, 오류 종류와 �
 - rontend/app/, rontend/components/: Next.js 반응형 화면과 FastAPI 프록시.
 - rontend/lib/: API 클라이언트와 프론트엔드 타입.
 
-SQLAlchemy는 저장 계층을 계획 로직에서 분리하고, 트랜잭션과 향후 DB 전환을 지원하기
-위해 추가했습니다. SQLite의 외래키를 활성화하며, 연결된 계획이 있는 할 일은 삭제를
-거부합니다. 쓰기는 잠금을 얻은 뒤 현재 데이터를 읽고 검증하여 함께 커밋하며,
+SQLAlchemy는 저장 계층을 계획 로직에서 분리하고 SQLite와 PostgreSQL을 함께 지원하기
+위해 사용합니다. 로컬에서는 SQLite 외래키를 활성화하고, 배포에서는 Neon PostgreSQL을
+사용합니다. 연결된 계획이 있는 할 일은 삭제를 거부합니다. 쓰기는 데이터베이스별
+잠금을 얻은 뒤 현재 데이터를 읽고 검증하여 함께 커밋하며,
 중간 실패 시 전체 변경을 롤백합니다. 시간은 UTC로 저장하고 한국 시간으로 표시합니다.
 
 기존 계획과 겹치는 고정 일정, 기존 계획을 무효로 만드는 선호도 변경은 거부합니다.
@@ -261,16 +263,25 @@ Agent에는 각 빈 구간의 첫 정수 분 시각과 이후 30분 경계의 �
 미배치 목표는 unallocated로 표시합니다. DB 모드는 조회 시 현재 주를 다시 계산합니다.
 일정이 바뀌거나 시간이 지나 초안이 무효가 되면 재요청해야 합니다.
 
-현재는 단일 사용자 로컬 CLI/API/웹 앱이며 일반 DB 스키마 마이그레이션, 인증, 공개 배포는 아직 없습니다. DB 스키마 변경이 필요하면 별도 마이그레이션 작업이
-필요합니다. 백업은 CLI와 API 서버를 모두 종료한 후 SQLite 파일을 복사하세요.
+현재는 단일 사용자 앱이며 일반 DB 스키마 마이그레이션과 사용자 계정 인증은 아직
+없습니다. DB 스키마 변경이 필요하면 별도 마이그레이션 작업이 필요합니다. 로컬
+SQLite를 백업할 때는 CLI와 API 서버를 모두 종료한 후 파일을 복사하세요.
 
 ## 배포 준비
 
 프런트엔드는 비공개 OpenAI Sites 프로젝트로 등록되어 있습니다. 백엔드는 루트의
-`render.yaml`을 이용해 Render의 Singapore 리전에 배포하도록 준비했습니다. SQLite 데이터를
-유지하려면 유료 웹 서비스와 1GB 영구 디스크가 필요합니다. Render 생성 화면에서
-`OPENAI_API_KEY`와 `APP_INTERNAL_TOKEN`을 입력한 뒤, 생성된 백엔드 URL을 Sites의
-`BACKEND_API_URL`로 설정하고 비공개 게시합니다. 비밀값은 저장소에 커밋하지 않습니다.
+`render.yaml`을 이용해 Render Singapore의 무료 웹 서비스로 배포합니다. 영구 데이터는
+Neon 무료 PostgreSQL에 저장하므로 Render의 휘발성 파일 시스템에 의존하지 않습니다.
+
+1. Neon에서 프로젝트를 만들고 pooled PostgreSQL 연결 문자열을 복사합니다.
+2. Render Blueprint에서 이 저장소를 선택합니다.
+3. Render의 `DATABASE_URL`, `OPENAI_API_KEY`, `APP_INTERNAL_TOKEN` 비밀값을 입력합니다.
+4. 생성된 `https://...onrender.com` 주소를 Sites의 `BACKEND_API_URL`에 설정합니다.
+5. 프런트엔드를 비공개 게시합니다.
+
+`APP_INTERNAL_TOKEN`은 백엔드와 Sites에 같은 값을 사용해야 합니다. 비밀값은 저장소에
+커밋하지 않습니다. Render 무료 서버는 유휴 상태에서 정지되므로 첫 요청이 느릴 수
+있지만, 이후 요청은 정상 속도로 처리됩니다.
 
 ## Git과 다음 단계
 
