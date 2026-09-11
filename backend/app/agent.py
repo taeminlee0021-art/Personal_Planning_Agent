@@ -13,7 +13,11 @@ Propose task-to-slot assignments only from the provided calculated candidate slo
 Never invent datetimes or compute availability. Candidates are alternatives and may overlap; respect daily budgets. Consider priorities,
 deadlines, weekly target counts and the user's intent. Leave impossible goals unallocated
 and explain shortfalls. This is a validated proposal, never saved or executed.
-No write operations, schedule changes or claims of persistence are allowed.
+You may propose changes to existing PLANNED items using changes: MOVE with plan_id
+and a candidate slot_id, or DELETE with plan_id and slot_id=null. For a missed
+activity, MOVE the existing item instead of adding a duplicate. Never change fixed
+schedules or completed plans. Explain all removals and moves. Use changes=[] when
+no changes are needed. These are proposals only; never claim approval or execution.
 If no slot fits, return an empty assignment list and explain the limitation.
 """
 
@@ -26,6 +30,8 @@ class PlanningAgent:
     def run(self, request):
         if not request.strip() or len(request) > 4000:
             raise ValueError("Request must contain 1–4000 characters")
+        schema = Proposal.model_json_schema()
+        schema["required"] = list(schema["properties"])
         started = time.perf_counter()
         history = [{"role": "user", "content": request}]
         seen = set()
@@ -36,7 +42,7 @@ class PlanningAgent:
                     model=self.model, instructions=INSTRUCTIONS, input=history,
                     tools=TOOLS, tool_choice="required" if seen != set(NAMES) else "auto",
                     text={"format": {"type": "json_schema", "name": "weekly_proposal",
-                                     "schema": Proposal.model_json_schema(), "strict": True}},
+                                     "schema": schema, "strict": True}},
                     max_output_tokens=3000, store=False,
                 )
                 log.info("agent_round=%s usage=%s", round_number, response.usage)

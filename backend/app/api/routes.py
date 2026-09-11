@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Request, Response
+from fastapi import APIRouter, Depends, Path, Request, Response, Body
 
 from app.api.schemas import (
-    AgentMessage, AgentResponse, ErrorResponse, PlanResponse, PreferencesResponse,
+    AgentMessage, AgentResponse, EmptyDecision, ErrorResponse, PlanResponse, PreferencesResponse,
     ScheduleResponse, TaskCreate, TaskUpdate,
 )
+from app.actions import ActionResponse, ActionService
 from app.inputs import ScheduleInput
 from app.models import Task
 from app.planning import Preferences
@@ -105,4 +106,27 @@ def week(service: Service):
 def agent_message(value: AgentMessage, request: Request, service: Service):
     # Synchronous route runs outside the event loop; no database write transaction
     # remains open while waiting for the external API.
-    return request.app.state.agent_runner(service, value.message)
+    proposal = request.app.state.agent_runner(service, value.message)
+    return ActionService(service).propose(proposal)
+
+
+@router.get("/agent/actions", response_model=list[ActionResponse], tags=["Agent Actions"])
+def pending_actions(service: Service):
+    return ActionService(service).list_pending()
+
+
+@router.get("/agent/actions/{action_id}", response_model=ActionResponse, tags=["Agent Actions"])
+def action(action_id: Annotated[int, Path(gt=0)], service: Service):
+    return ActionService(service).get(action_id)
+
+
+@router.post("/agent/actions/{action_id}/approve", response_model=ActionResponse, tags=["Agent Actions"])
+def approve_action(action_id: Annotated[int, Path(gt=0)], service: Service,
+                   value: Annotated[EmptyDecision | None, Body()] = None):
+    return ActionService(service).approve(action_id)
+
+
+@router.post("/agent/actions/{action_id}/reject", response_model=ActionResponse, tags=["Agent Actions"])
+def reject_action(action_id: Annotated[int, Path(gt=0)], service: Service,
+                  value: Annotated[EmptyDecision | None, Body()] = None):
+    return ActionService(service).reject(action_id)

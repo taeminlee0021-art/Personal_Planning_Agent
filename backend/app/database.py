@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer,
-    MetaData, String, Table, Time, URL, create_engine, event, select,
+    MetaData, String, Table, Time, URL, JSON, create_engine, event, select,
 )
 from sqlalchemy.types import TypeDecorator
 from app.errors import NotFoundError
@@ -84,6 +84,24 @@ plans = Table(
     CheckConstraint("end_datetime > start_datetime"),
     CheckConstraint("status IN ('PLANNED', 'COMPLETED')"),
     CheckConstraint("source IN ('MANUAL', 'AGENT')"),
+    sqlite_autoincrement=True,
+)
+
+
+pending_actions = Table(
+    "pending_actions", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("action_type", String(20), nullable=False),
+    Column("status", String(12), nullable=False, index=True),
+    Column("payload", JSON, nullable=False),
+    Column("baseline", JSON, nullable=False),
+    Column("result", JSON),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    Column("approved_at", UTCDateTime()),
+    Column("executed_at", UTCDateTime()),
+    CheckConstraint("action_type = 'PLAN_CHANGES'"),
+    CheckConstraint("status IN ('PENDING', 'APPROVED', 'REJECTED', 'EXECUTED')"),
     sqlite_autoincrement=True,
 )
 

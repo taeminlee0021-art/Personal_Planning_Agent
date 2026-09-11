@@ -1177,3 +1177,49 @@ not been started.
 - Known issue: two upstream Starlette test-client deprecation warnings (httpx and
   AnyIO BlockingPortal); tests pass. No schema migrations, product web UI or
   approval execution yet. No Git push. Stop after Phase 4.
+
+
+## 2026-09-11 - Phase 5 human approval
+
+The user authorized Phase 5 and resumed final review on September 11.
+This entry supersedes earlier statements that approval support is absent.
+Phase 6 has not been started.
+
+- Added pending_actions table and actions.py with validated review models,
+  immutable proposal payload, internal task baselines, status/timestamps and results.
+  Existing databases gain only the new table; old tables/data remain intact.
+- Structured proposals now support creation assignments and MOVE/DELETE changes
+  to unfinished current-week plans. Exact before/after values are shown. Fixed
+  schedules and completed plans cannot be changed through Agent actions.
+- API/CLI Agent requests persist a PENDING action, returning action_id, without
+  changing tasks/schedules/preferences/plans. Empty proposals have no action row
+  and return PROPOSED_NOT_SAVED with action_id=null. Demo mode has no approvals.
+- Added pending list, action detail, approve and reject APIs under /api/agent/actions.
+  Decision bodies are empty or {}; payload overrides are rejected.
+  CLI menu 9 shows the review followed by apply-all/reject/back choices in Korean.
+- Approval re-reads current state under BEGIN IMMEDIATE, checks referenced task
+  baselines and target plan snapshots, then validates time/week, availability,
+  fixed schedules, overlaps, duration, deadlines, weekly counts and daily budgets.
+  Prior-week plans crossing midnight still consume their overlapping day's budget.
+- Stale or conflicting proposals return 409 and remain PENDING for rejection or
+  replacement. No approval-time LLM call and no silent rewriting of the review.
+- PENDING -> APPROVED -> EXECUTED and all related writes occur in one transaction.
+  Failure rolls back the entire operation to PENDING. Rejection changes only
+  action state. Repeated approve/reject is idempotent; conflicting terminal-state
+  transitions are refused. Created/moved plans use source=AGENT; moves preserve IDs.
+- Agent output schema requires all root fields including changes. The Agent has
+  read tools only and cannot approve itself. API key/error protection is unchanged.
+- Changed database, models, Agent, services, API models/routes/main and CLI.
+  Added actions.py and tests/test_actions.py; updated API regressions and README.
+  No new dependencies.
+- Verification: 153 tests passed on Python 3.14.5. Tested restart preservation,
+  prior-schema upgrade, preapproval no-write behavior, missed activity moves,
+  deletion/mixed changes, stale inputs, concurrent duplicate/conflicting approval,
+  rollback, payload override rejection, CLI decisions, week boundaries and no-op moves.
+- Real Uvicorn loopback HTTP approval smoke passed using a temporary DB and mock
+  Agent: pending review, no early writes, explicit apply and idempotent retry.
+  Temporary server stopped; real application DB untouched and no paid API calls.
+- Known limitations: two upstream Starlette test deprecation warnings remain;
+  real model execution is untested; general schema migrations, partial approvals,
+  automatic undo and responsive frontend are not implemented. Invalid pending
+  actions remain listed until rejected. No Git push. Stop after Phase 5.

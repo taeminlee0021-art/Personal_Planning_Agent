@@ -201,13 +201,13 @@ def test_agent_endpoint_uses_real_tool_loop_without_writes(client, monkeypatch):
     before = db_snapshot(client)
     response = client.post("/api/agent/messages", json={"message": "Plan my week"})
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "PROPOSED_NOT_SAVED"
+    assert response.json()["status"] == "PENDING"
     assert len(response.json()["blocks"]) == 1
     assert SECRET not in response.text
     assert db_snapshot(client) == before
     assert factory.call_args.kwargs["api_key"] == SECRET
     assert SECRET not in str(sdk.responses.create.call_args_list)
-    assert client.post("/api/agent/actions/1/approve").status_code == 404
+    assert client.get("/api/agent/actions").json()[0]["id"] == response.json()["action_id"]
 
 
 @pytest.mark.parametrize("body", [{"message": ""}, {"message": "   "}, {"message": "x" * 4001},
@@ -268,7 +268,7 @@ def test_openapi_and_docs_have_no_credentials(client, monkeypatch):
     schema = client.get("/openapi.json")
     assert schema.status_code == 200
     assert SECRET not in schema.text
-    assert "/api/agent/actions/{action_id}/approve" not in schema.json()["paths"]
+    assert "/api/agent/actions/{action_id}/approve" in schema.json()["paths"]
     assert client.get("/docs").status_code == 200
     assert client.get("/api/preferences").headers["cache-control"] == "no-store"
 

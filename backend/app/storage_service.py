@@ -160,8 +160,9 @@ class DatabasePlanningService:
             return self._snapshot(repository).get_available_time_slots()
 
     def render_proposal(self, proposal: Proposal):
+        from app.actions import render_review
         with self.database.transaction() as repository:
-            return self._snapshot(repository).render_proposal(proposal)
+            return render_review(self, repository, proposal)
 
     def save_manual_plan(self, value: ManualPlanInput, identifier=None):
         value = ManualPlanInput.model_validate(value.model_dump())

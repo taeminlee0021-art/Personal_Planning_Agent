@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Model(BaseModel):
@@ -29,6 +29,20 @@ class Assignment(Model):
     slot_id: str
 
 
+class PlanChange(Model):
+    operation: Literal["MOVE", "DELETE"]
+    plan_id: int = Field(gt=0)
+    slot_id: str | None
+
+    @model_validator(mode="after")
+    def valid_operation(self):
+        if (self.operation == "DELETE") != (self.slot_id is None):
+            raise ValueError("MOVE needs a slot; DELETE must use null")
+        return self
+
+
 class Proposal(Model):
     explanation: str = Field(min_length=1, max_length=4000)
     assignments: list[Assignment] = Field(max_length=49)
+
+    changes: list[PlanChange] = Field(default_factory=list, max_length=49)

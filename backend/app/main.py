@@ -62,7 +62,7 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
         finally:
             database.close()
 
-    app = FastAPI(title="Personal Planning Agent", version="0.4.0", lifespan=lifespan)
+    app = FastAPI(title="Personal Planning Agent", version="0.5.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def safe_errors(request: Request, call_next):

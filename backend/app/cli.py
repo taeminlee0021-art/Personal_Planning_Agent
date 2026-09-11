@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.actions import ActionService
 from app.agent import PlanningAgent
 from app.database import Database
 from app.inputs import ManualPlanInput, ScheduleInput
@@ -27,7 +28,8 @@ def ask_agent(service, request):
     if not key or not model:
         raise ValueError("backend/.env에 OPENAI_API_KEY와 OPENAI_MODEL을 설정하세요.")
     with OpenAI(api_key=key, timeout=60, max_retries=0) as client:
-        show(PlanningAgent(client, model, service).run(request))
+        proposal = PlanningAgent(client, model, service).run(request)
+    show(ActionService(service).propose(proposal) if service.persistent else proposal)
 
 
 def read_datetime(prompt):
@@ -121,11 +123,32 @@ def edit_plans(service):
         show(service.save_manual_plan(value, identifier))
 
 
+def review_actions(service):
+    actions = ActionService(service)
+    pending = actions.list_pending()
+    if not pending:
+        print("승인 대기 중인 제안이 없습니다.")
+        return
+    for action in pending:
+        print(f"ID {action['id']}: {action['proposal']['explanation']}")
+    identifier = int(input("검토할 제안 ID (0 = 돌아가기): "))
+    if identifier == 0:
+        return
+    show(actions.get(identifier))
+    decision = input("1. 전체 변경 적용  2. 거절  0. 돌아가기: ").strip()
+    if decision == "1":
+        show(actions.approve(identifier))
+    elif decision == "2":
+        show(actions.reject(identifier))
+
+
 def menu(service):
     while True:
         print("\n1. 자연어 계획 요청  2. 이번 주 계획 제안  3. 할 일 직접 입력  4. 데이터 조회  0. 종료")
         if service.persistent:
             print("5. 고정 일정 관리  6. 선호도 설정  7. 수동 계획 관리  8. 할 일 수정/완료/삭제")
+        if service.persistent:
+            print("9. Agent 제안 검토·승인·거절")
         choice = input("선택: ").strip()
         if choice == "0":
             return
@@ -146,6 +169,8 @@ def menu(service):
                 print("데이터베이스에 저장했습니다." if service.persistent else "데모 세션에 추가했습니다. 종료하면 사라집니다.")
             elif choice == "4":
                 show(data(service))
+            elif service.persistent and choice == "9":
+                review_actions(service)
             elif service.persistent and choice in {"5", "6", "7", "8"}:
                 {"5": edit_schedules, "6": edit_preferences, "7": edit_plans, "8": edit_tasks}[choice](service)
             else:
@@ -159,7 +184,7 @@ def menu(service):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Phase 3 PlanningAgent: SQLite 저장, Agent는 초안만 제안")
+    parser = argparse.ArgumentParser(description="Phase 5 PlanningAgent: SQLite 저장, Agent는 초안만 제안")
     parser.add_argument("--request", help="자연어 요청을 한 번 실행")
     parser.add_argument("--show-data", action="store_true", help="API 호출 없이 데이터 조회")
     parser.add_argument("--trace", action="store_true", help="내용 대신 메타데이터와 사용량 로그 출력")

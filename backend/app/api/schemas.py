@@ -2,6 +2,7 @@ from datetime import date
 from typing import Literal
 
 from pydantic import AwareDatetime, Field, model_validator
+from app.actions import Review
 from app.inputs import ScheduleInput
 from app.models import Model, TaskFields
 from app.planning import Preferences
@@ -54,25 +55,13 @@ class AgentMessage(Model):
     message: str = Field(min_length=1, max_length=4000)
 
 
-class ProposedBlock(Model):
-    task_id: int
-    title: str
-    start_datetime: AwareDatetime
-    end_datetime: AwareDatetime
+class AgentResponse(Review):
+    status: Literal["PENDING", "PROPOSED_NOT_SAVED"]
+    action_id: int | None
 
 
-class Unallocated(Model):
-    task_id: int
-    remaining_count: int = Field(gt=0)
-
-
-class AgentResponse(Model):
-    status: Literal["PROPOSED_NOT_SAVED"]
-    fixture_only: Literal[False]
-    mock_data: Literal[False]
-    explanation: str
-    blocks: list[ProposedBlock]
-    unallocated: list[Unallocated]
+class EmptyDecision(Model):
+    pass
 
 
 class ErrorBody(Model):

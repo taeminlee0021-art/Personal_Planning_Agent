@@ -61,6 +61,8 @@ class PlanningSnapshot:
                 "slots": self.slots}
 
     def render_proposal(self, proposal: Proposal):
+        if proposal.changes:
+            raise ValueError("Changes to existing plans require the database service")
         tasks = {task.id: task for task in self.tasks}
         now = self.current_time()
         slots = {slot["id"]: slot for slot in candidate_slots(
