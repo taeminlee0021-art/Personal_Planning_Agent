@@ -1223,3 +1223,67 @@ Phase 6 has not been started.
   real model execution is untested; general schema migrations, partial approvals,
   automatic undo and responsive frontend are not implemented. Invalid pending
   actions remain listed until rejected. No Git push. Stop after Phase 5.
+
+## 2026-09-11 - Phase 6 responsive web UI
+
+The user authorized Phase 6 after completion of Phase 5. This entry supersedes
+statements that the responsive frontend is absent. Phase 7 has not been started.
+
+- Added a Next.js 16.2 / React 19 / TypeScript / Tailwind frontend under frontend/.
+  It uses the bundled Vinext-compatible Sites starter and pnpm 11.19 lockfile.
+  No backend dependency or database schema changed.
+- Implemented the four product areas in one responsive application: Today, Tasks,
+  Weekly Plan and PlanningAgent. Desktop uses an accessible sidebar; widths below
+  768px use a touch-friendly bottom navigation with iPhone safe-area padding.
+- Today reads the current plan, planned minutes and active goal progress. Tasks
+  supports validated create, edit, complete/reopen and guarded delete operations.
+- Weekly Plan renders vertical day cards on mobile and a seven-column overview on
+  large screens. Fixed schedules can be created, edited and guarded-deleted;
+  existing deterministic backend validation remains authoritative. Planning
+  availability preferences can be edited in Asia/Seoul time.
+- PlanningAgent chat calls the existing backend Agent endpoint. Exact creation,
+  move and delete proposals are displayed as persisted PENDING action reviews.
+  Apply and Reject call the Phase 5 approval endpoints; no change is applied by
+  the browser before explicit approval.
+- Added loading, empty, retry, conflict and success feedback. Destructive actions
+  use confirmation dialogs. Input controls use the bundled accessible primitives;
+  main copy is Korean and main body/control text remains touch-readable.
+- Added a same-origin /api server proxy. The backend address is server-only via
+  BACKEND_API_URL and defaults to http://127.0.0.1:8000, so no OpenAI key enters
+  browser code and FastAPI CORS remains closed. frontend/.env.example documents
+  the optional override.
+- Added two WebMCP tools when the browser supports the proposed API: read the task
+  list and create a validated task. Unsupported browsers ignore registration.
+  A supported WebMCP validation context was unavailable and WebMCP was not an
+  explicit user requirement.
+- Updated product metadata, favicon, package identity, root/frontend README files,
+  and removed unused starter placeholder assets. No social-preview image or
+  deployment was requested, so none was added and the Site was not published.
+- Verification: TypeScript `tsc --noEmit` passed; the production Vinext build
+  passed with `/` and `/api/:path+`; all 153 backend tests passed on Python 3.14.5
+  with the same two upstream Starlette warnings. A live local FastAPI + frontend
+  smoke verified same-origin task create/update/delete, schedule create/delete,
+  and preferences/plan reads. Temporary smoke records were removed; the real DB
+  returned zero tasks and schedules afterward. No paid OpenAI call was made.
+- Environment note: the official Sites install/build wrappers could not acquire
+  their Windows flock/spawn paths. The identical bundled pnpm version and verified
+  starter lockfile were used directly; install, typecheck and build succeeded.
+- Local preview follow-up: Vinext dev could stall before binding port 5173 and later
+  exit with workerd ECONNRESET on this Windows host. The default `pnpm dev` now
+  uses native Next.js on 127.0.0.1:5173; `pnpm dev:sites` retains the Sites preview.
+- Remaining limitations: real model execution is still untested; there are no
+  frontend component tests, authentication, public deployment, general schema
+  migrations, partial approvals or automatic undo. Phase 7 requires the user's
+  next instruction.
+
+
+## 2026-09-11 - Phase 7 deployment preparation
+
+- The user authorized completion of all remaining MVP work, including live model verification, source control and deployment.
+- Configured gpt-5-nano with low reasoning effort and a 6000-token response ceiling. The first live synthetic-data run reached all five read tools but exhausted its original response budget; after the adjustment, a second real Responses API run completed with a validated proposal. No stored personal tasks or schedules were transmitted during this smoke test.
+- Added optional server-to-server authentication with APP_INTERNAL_TOKEN. When configured, every /api route rejects direct requests without the matching X-Internal-Token header; /health remains available for hosting checks. The Next.js proxy adds the token only on the server, so it is not exposed to browser JavaScript.
+- Added PLANNING_DATABASE_PATH for production persistent storage and a Render Blueprint for a Singapore Python web service with a 1 GB persistent disk, gpt-5-nano, secret prompts and a health check. Creating that paid Render service still requires the user's provider login and payment confirmation.
+- Registered the existing frontend as a private Sites project and stored its project_id in frontend/.openai/hosting.json. Configured its APP_INTERNAL_TOKEN secret. BACKEND_API_URL cannot be set and the Site cannot be usefully published until the backend has a production URL.
+- Generated a random local server-to-server token in ignored backend/.env and frontend/.env.local. The previously pasted OpenAI key remains compromised and must be revoked and replaced locally before production deployment.
+- Verification: a real gpt-5-nano tool-calling proposal completed; 154 backend tests passed with the existing two upstream warnings; TypeScript checking and the production Vinext build passed. Local security smoke returned /health 200, direct unauthenticated backend API 401 and authenticated frontend proxy 200.
+- Remaining external blockers: revoke/create an OpenAI key, approve a paid persistent Render service, enter OPENAI_API_KEY and APP_INTERNAL_TOKEN in Render, then provide its URL for Sites BACKEND_API_URL and private publication. Browser automation was unavailable, so these account and payment steps were not performed automatically.

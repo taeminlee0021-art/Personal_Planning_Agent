@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: personal-planning-agent-api
+    runtime: python
+    region: singapore
+    plan: 0.5c-512mb
+    rootDir: backend
+    buildCommand: pip install .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5-nano
+      - key: APP_INTERNAL_TOKEN
+        sync: false
+      - key: PLANNING_DATABASE_PATH
+        value: /var/data/planning.db
+    disk:
+      name: planning-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -4,6 +4,7 @@ from http import HTTPStatus
 import logging
 import os
 from pathlib import Path
+import secrets
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -54,7 +55,8 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
     @asynccontextmanager
     async def lifespan(app):
         load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-        database = Database(database_path or Path(__file__).resolve().parents[1] / "data" / "planning.db")
+        configured_path = os.getenv("PLANNING_DATABASE_PATH", "").strip()
+        database = Database(database_path or configured_path or Path(__file__).resolve().parents[1] / "data" / "planning.db")
         try:
             app.state.service = DatabasePlanningService(database, now=now)
             app.state.agent_runner = agent_runner or run_agent
@@ -66,6 +68,12 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
 
     @app.middleware("http")
     async def safe_errors(request: Request, call_next):
+        internal_token = os.getenv("APP_INTERNAL_TOKEN", "").strip()
+        if (request.url.path.startswith("/api/") and internal_token and
+                not secrets.compare_digest(request.headers.get("x-internal-token", ""), internal_token)):
+            response = error(401, "unauthorized", "Authentication required.")
+            response.headers["Cache-Control"] = "no-store"
+            return response
         try:
             response = await call_next(request)
         except Exception as exc:
@@ -74,6 +82,10 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
             response = error(500, "internal_error", "An internal error occurred.")
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/health", include_in_schema=False)
+    async def health():
+        return {"status": "ok"}
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):

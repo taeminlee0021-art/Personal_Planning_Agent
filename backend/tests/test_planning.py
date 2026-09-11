@@ -102,6 +102,8 @@ def test_agent_calls_tools_then_returns_validated_proposal(service):
     assert service.__dict__ == before
     args = client.responses.create.call_args.kwargs
     assert sum(isinstance(item, dict) and item.get("type") == "function_call_output" for item in args["input"]) == 5
+    assert args["reasoning"] == {"effort": "low"}
+    assert args["max_output_tokens"] == 6000
     assert args["store"] is False
 
 

@@ -43,7 +43,7 @@ class PlanningAgent:
                     tools=TOOLS, tool_choice="required" if seen != set(NAMES) else "auto",
                     text={"format": {"type": "json_schema", "name": "weekly_proposal",
                                      "schema": schema, "strict": True}},
-                    max_output_tokens=3000, store=False,
+                    reasoning={"effort": "low"}, max_output_tokens=6000, store=False,
                 )
                 log.info("agent_round=%s usage=%s", round_number, response.usage)
                 if response.status != "completed":

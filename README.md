@@ -1,7 +1,7 @@
 # Personal Planning Agent
 
 자연어 요청·메뉴 선택·직접 입력을 지원하는 개인 계획 Agent입니다.
-현재 **Phase 5: 사용자 승인 후 실행**까지 구현했습니다. 웹 화면은 Phase 6에서 구현합니다.
+Phase 6 반응형 웹 화면까지 구현했고, Phase 7 배포 보안과 호스팅 구성을 준비했습니다. 데스크톱과 모바일 브라우저에서 같은 앱을 사용합니다.
 
 ## 설치 및 실행
 
@@ -42,9 +42,34 @@ CLI를 종료해도 직접 입력한 데이터가 유지됩니다.
 ```
 
 서버 실행 후 [API 문서](http://127.0.0.1:8000/docs)에서 요청을 시험할 수 있습니다.
-이 화면은 개발용 API 문서이며 제품의 웹 화면은 Phase 6에서 구현합니다.
+이 화면은 개발용 API 문서입니다. 제품 화면은 아래 프론트엔드 서버에서 실행합니다.
 Ctrl+C로 서버를 종료합니다. 현재 인증이 없는 로컬 단일 사용자 모드이므로
-127.0.0.1에 바인딩합니다. 공개 배포와 프론트엔드 CORS 설정은 아직 추가하지 않았습니다.
+127.0.0.1에 바인딩합니다. 프론트엔드는 동일 출처 서버 프록시를 사용하므로 CORS를
+열지 않습니다. 공개 배포와 인증은 아직 추가하지 않았습니다.
+
+## 반응형 웹 화면 실행
+
+Node.js 22.13 이상과 pnpm 11.19가 필요합니다. FastAPI 서버를 먼저 실행한 뒤,
+새 터미널에서 다음을 실행하세요.
+
+```powershell
+cd frontend
+corepack pnpm install --frozen-lockfile
+corepack pnpm dev
+```
+
+[웹 화면](http://localhost:5173)은 네 영역으로 구성됩니다.
+
+- **오늘**: 오늘의 계획과 하루 계획 한도 내 남은 시간
+- **할 일**: 생성·수정·완료·삭제와 주간 목표 진행률
+- **주간 계획**: 모바일 세로형 주간 일정, 고정 일정 관리, 계획 가능 시간 설정
+- **플래너**: 자연어 계획 요청, 생성·이동·삭제 제안 검토, 승인·거절
+
+프론트엔드는 `/api` 요청을 서버에서 FastAPI로 전달하므로 OpenAI 키가 브라우저에
+노출되지 않습니다. 기본 백엔드 주소는 `http://127.0.0.1:8000`입니다. 다른 주소를
+사용하면 `frontend/.env.example`을 참고해 `frontend/.env.local`의
+`BACKEND_API_URL`을 변경하세요. iPhone Safari의 안전 영역을 고려한 하단 내비게이션과
+터치 크기를 적용했으며, 데스크톱에서는 사이드바로 전환됩니다.
 
 | 메서드 | 경로 | 기능 |
 | --- | --- | --- |
@@ -91,7 +116,7 @@ PUT /preferences는 전체 교체이며 생략된 필드는 기본값으로 돌�
 설정합니다. 서버 모듈을 import할 때 DB나 API 클라이언트를 생성하지 않습니다.
 DB 연결은 서버 시작 시 열고 종료 시 정리합니다.
 
-검증: 전체 테스트 153개 통과 및 임시 DB/로컬 포트를 사용한 실제 Uvicorn HTTP 점검 완료.
+검증: 전체 테스트 154개 통과 및 임시 DB/로컬 포트를 사용한 실제 Uvicorn HTTP 점검 완료.
 현재 설치된 Starlette 테스트 클라이언트에서 httpx 및 AnyIO 사용 중단 예정 경고가
 2개 발생합니다. 테스트 실패는 아니며 경고를 숨기거나 의존성을 임의로 변경하지 않았습니다.
 
@@ -168,7 +193,9 @@ Agent 계획 요청만 OpenAI API를 호출하며 비용이 발생합니다.
 
 ```text
 OPENAI_API_KEY=본인의 키
-OPENAI_MODEL=계정에서 사용할 Responses API 모델 ID
+OPENAI_MODEL=gpt-5-nano
+APP_INTERNAL_TOKEN=배포 시 프론트엔드와 공유할 임의의 서버 비밀값
+PLANNING_DATABASE_PATH=배포 시 영구 디스크의 planning.db 경로
 ```
 
 키를 채팅이나 Git에 올리지 마세요. 키는 백엔드 환경변수에서만 읽으며,
@@ -194,7 +221,9 @@ trace는 요청 길이, 도구명, 결과 길이, 사용량, 오류 종류와 �
 - `backend/app/models.py`: 할 일과 Agent 구조화 출력 모델.
 - `backend/app/agent.py`, `tools.py`: 단일 PlanningAgent와 5개 허용된 조회 도구.
 - `backend/app/cli.py`: 자연어·선택·직접 입력 인터페이스.
-- `backend/tests/`: 계획 엔진, 도구 호출, SQLite 및 CLI 통합 테스트.
+- ackend/tests/: 계획 엔진, 도구 호출, SQLite 및 CLI 통합 테스트.
+- rontend/app/, rontend/components/: Next.js 반응형 화면과 FastAPI 프록시.
+- rontend/lib/: API 클라이언트와 프론트엔드 타입.
 
 SQLAlchemy는 저장 계층을 계획 로직에서 분리하고, 트랜잭션과 향후 DB 전환을 지원하기
 위해 추가했습니다. SQLite의 외래키를 활성화하며, 연결된 계획이 있는 할 일은 삭제를
@@ -232,15 +261,23 @@ Agent에는 각 빈 구간의 첫 정수 분 시각과 이후 30분 경계의 �
 미배치 목표는 unallocated로 표시합니다. DB 모드는 조회 시 현재 주를 다시 계산합니다.
 일정이 바뀌거나 시간이 지나 초안이 무효가 되면 재요청해야 합니다.
 
-현재는 단일 사용자 로컬 CLI/API이며 일반 DB 스키마 마이그레이션과 웹 화면은 아직 없습니다. DB 스키마 변경이 필요하면 별도 마이그레이션 작업이
+현재는 단일 사용자 로컬 CLI/API/웹 앱이며 일반 DB 스키마 마이그레이션, 인증, 공개 배포는 아직 없습니다. DB 스키마 변경이 필요하면 별도 마이그레이션 작업이
 필요합니다. 백업은 CLI와 API 서버를 모두 종료한 후 SQLite 파일을 복사하세요.
+
+## 배포 준비
+
+프런트엔드는 비공개 OpenAI Sites 프로젝트로 등록되어 있습니다. 백엔드는 루트의
+`render.yaml`을 이용해 Render의 Singapore 리전에 배포하도록 준비했습니다. SQLite 데이터를
+유지하려면 유료 웹 서비스와 1GB 영구 디스크가 필요합니다. Render 생성 화면에서
+`OPENAI_API_KEY`와 `APP_INTERNAL_TOKEN`을 입력한 뒤, 생성된 백엔드 URL을 Sites의
+`BACKEND_API_URL`로 설정하고 비공개 게시합니다. 비밀값은 저장소에 커밋하지 않습니다.
 
 ## Git과 다음 단계
 
 원격: [Personal_Planning_Agent](https://github.com/taeminlee0021-art/Personal_Planning_Agent).
-기본 브랜치는 main이며 자동 push는 하지 않습니다.
+기본 브랜치는 main입니다.
 .env, 가상환경, 로그, SQLite 파일과 임시 저널 파일은 Git에서 제외합니다.
 
 Phase 1 CLI → Phase 2 계획 엔진 → Phase 3 DB → Phase 4 FastAPI →
-**Phase 5 승인** → Phase 6 반응형 웹 → Phase 7 배포.
+Phase 5 승인 → Phase 6 반응형 웹 → **Phase 7 배포 준비**.
 각 단계 완료 후 AGENTS.md를 갱신하고 다음 지시를 기다립니다.

@@ -23,6 +23,8 @@ SECRET = "sk-test-private-value-never-return"
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("OPENAI_MODEL", "")
+    monkeypatch.setenv("APP_INTERNAL_TOKEN", "")
+    monkeypatch.setenv("PLANNING_DATABASE_PATH", "")
     app = create_app(tmp_path / "api.db", now=NOW)
     with TestClient(app) as client:
         yield client
@@ -271,6 +273,18 @@ def test_openapi_and_docs_have_no_credentials(client, monkeypatch):
     assert "/api/agent/actions/{action_id}/approve" in schema.json()["paths"]
     assert client.get("/docs").status_code == 200
     assert client.get("/api/preferences").headers["cache-control"] == "no-store"
+
+
+def test_internal_token_protects_api_but_not_health(tmp_path, monkeypatch):
+    token = "server-to-server-secret"
+    monkeypatch.setenv("APP_INTERNAL_TOKEN", token)
+    with TestClient(create_app(tmp_path / "protected.db", now=NOW)) as protected:
+        assert protected.get("/health").json() == {"status": "ok"}
+        denied = protected.get("/api/preferences")
+        assert denied.status_code == 401
+        assert denied.json()["error"]["code"] == "unauthorized"
+        allowed = protected.get("/api/preferences", headers={"x-internal-token": token})
+        assert allowed.status_code == 200
 
 
 def test_response_validation_and_unknown_routes_are_sanitized(client, monkeypatch, caplog):
