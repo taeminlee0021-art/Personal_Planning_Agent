@@ -4,8 +4,8 @@ from datetime import timezone
 from pathlib import Path
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer,
-    MetaData, String, Table, Time, URL, JSON, create_engine, event, select,
+    Boolean, CheckConstraint, Column, Date, DateTime, Float, ForeignKey, Integer,
+    MetaData, String, Table, Time, URL, JSON, UniqueConstraint, create_engine, event, inspect, select,
 )
 from sqlalchemy.types import TypeDecorator
 from app.errors import NotFoundError
@@ -63,6 +63,7 @@ schedules = Table(
     Column("end_datetime", UTCDateTime(), nullable=False),
     Column("description", String(2000), nullable=False),
     Column("fixed", Boolean, nullable=False),
+    Column("completed", Boolean, nullable=False, default=False),
     CheckConstraint("end_datetime > start_datetime"),
     CheckConstraint("fixed"),
     sqlite_autoincrement=True,
@@ -113,6 +114,63 @@ pending_actions = Table(
     sqlite_autoincrement=True,
 )
 
+recurring_tasks = Table(
+    "recurring_tasks", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("title", String(120), nullable=False),
+    Column("cadence", String(10), nullable=False),
+    Column("weekdays", JSON, nullable=False),
+    Column("start_date", Date, nullable=False),
+    Column("active", Boolean, nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    CheckConstraint("cadence IN ('DAILY', 'WEEKLY')"),
+    sqlite_autoincrement=True,
+)
+
+today_items = Table(
+    "today_items", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("title", String(120), nullable=False),
+    Column("item_date", Date, nullable=False, index=True),
+    Column("status", String(12), nullable=False),
+    Column("source", String(10), nullable=False),
+    Column("recurrence_id", ForeignKey("recurring_tasks.id", ondelete="SET NULL"), index=True),
+    Column("task_id", ForeignKey("tasks.id", ondelete="SET NULL"), index=True),
+    Column("completion_count", Integer, nullable=False, default=0),
+    Column("completion_target", Integer, nullable=False, default=1),
+    Column("order_index", Integer, nullable=False, default=0),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    CheckConstraint("status IN ('TODO', 'COMPLETED')"),
+    CheckConstraint("source IN ('MANUAL', 'RECURRING', 'TASK')"),
+    CheckConstraint("completion_count >= 0"),
+    CheckConstraint("completion_target >= 1"),
+    CheckConstraint("order_index >= 0"),
+    UniqueConstraint("recurrence_id", "item_date", name="uq_today_items_recurrence_date"),
+    UniqueConstraint("task_id", "item_date", name="uq_today_items_task_date"),
+    sqlite_autoincrement=True,
+)
+
+body_settings = Table(
+    "body_settings", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("height_cm", Float, nullable=False),
+    CheckConstraint("id = 1"),
+    CheckConstraint("height_cm > 50 AND height_cm <= 250"),
+)
+
+weight_records = Table(
+    "weight_records", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("measured_on", Date, nullable=False, unique=True, index=True),
+    Column("weight_kg", Float, nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    CheckConstraint("weight_kg >= 20 AND weight_kg <= 400"),
+    sqlite_autoincrement=True,
+)
+
 
 class Database:
     def __init__(self, location: str | Path):
@@ -141,6 +199,58 @@ class Database:
                 connection.execute("PRAGMA foreign_keys=ON")
 
         metadata.create_all(self.engine)
+        if "schedules" in inspect(self.engine).get_table_names():
+            schedule_columns = {
+                column["name"] for column in inspect(self.engine).get_columns("schedules")
+            }
+            if "completed" not in schedule_columns:
+                with self.engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE schedules ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+        if "recurring_tasks" in inspect(self.engine).get_table_names():
+            recurring_columns = {
+                column["name"] for column in inspect(self.engine).get_columns("recurring_tasks")
+            }
+            if "start_date" not in recurring_columns:
+                with self.engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE recurring_tasks ADD COLUMN start_date "
+                        "DATE NOT NULL DEFAULT '1970-01-01'"
+                    )
+                    connection.exec_driver_sql(
+                        "UPDATE recurring_tasks SET start_date = "
+                        + ("date(created_at)" if self.is_sqlite else "CAST(created_at AS DATE)")
+                    )
+        if self.is_sqlite and "today_items" in inspect(self.engine).get_table_names():
+            columns = {column["name"] for column in inspect(self.engine).get_columns("today_items")}
+            with self.engine.begin() as connection:
+                if "task_id" not in columns:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE today_items ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL"
+                    )
+                if "completion_count" not in columns:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE today_items ADD COLUMN completion_count INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "completion_target" not in columns:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE today_items ADD COLUMN completion_target INTEGER NOT NULL DEFAULT 1"
+                    )
+                if "order_index" not in columns:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE today_items ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0"
+                    )
+                connection.exec_driver_sql(
+                    "UPDATE today_items SET order_index = id WHERE order_index = 0"
+                )
+                connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS ix_today_items_task_id ON today_items (task_id)"
+                )
+                connection.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_today_items_task_date "
+                    "ON today_items (task_id, item_date) WHERE task_id IS NOT NULL"
+                )
 
     @contextmanager
     def transaction(self, *, write=False):

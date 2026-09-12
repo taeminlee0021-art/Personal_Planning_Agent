@@ -65,8 +65,18 @@ class PlanningSnapshot:
             raise ValueError("Changes to existing plans require the database service")
         tasks = {task.id: task for task in self.tasks}
         now = self.current_time()
+        proposed_schedules = [item.model_dump(mode="json") for item in proposal.schedules]
+        proposed_ranges = [TimeRange(datetime.fromisoformat(item["start_datetime"]),
+                                     datetime.fromisoformat(item["end_datetime"]))
+                           for item in proposed_schedules]
+        if any(span.end <= now or not self.monday <= span.start.date() < self.monday + timedelta(days=7)
+               for span in proposed_ranges):
+            raise ValueError("Proposed fixed schedules must be upcoming in the current week")
+        if any(span.overlaps(block.time) for span in proposed_ranges for block in self.current_plan):
+            raise ValueError("Proposed fixed schedule conflicts with a current plan")
+        fixed_ranges = self.fixed_ranges() + proposed_ranges
         slots = {slot["id"]: slot for slot in candidate_slots(
-            self.monday, now, self.preferences, self.fixed_ranges(), self.current_plan)}
+            self.monday, now, self.preferences, fixed_ranges, self.current_plan)}
         blocks = []
         for item in proposal.assignments:
             if item.task_id not in tasks or item.slot_id not in slots:
@@ -75,7 +85,7 @@ class PlanningSnapshot:
             blocks.append(PlanBlock(item.task_id, TimeRange(
                 start, start + timedelta(minutes=tasks[item.task_id].estimated_minutes))))
         validate_plan(blocks, self.tasks, self.monday, now, self.preferences,
-                      self.fixed_ranges(), self.current_plan)
+                      fixed_ranges, self.current_plan)
         counts = {}
         for block in self.current_plan + blocks:
             if self.monday <= block.time.start.date() < self.monday + timedelta(days=7):
@@ -85,6 +95,7 @@ class PlanningSnapshot:
                 "blocks": [{"task_id": block.task_id, "title": tasks[block.task_id].title,
                             "start_datetime": block.time.start.isoformat(), "end_datetime": block.time.end.isoformat()}
                            for block in sorted(blocks, key=lambda block: block.time.start)],
+                "schedules": proposed_schedules,
                 "unallocated": [{"task_id": task.id, "remaining_count": task.weekly_target_count - counts.get(task.id, 0)}
                                 for task in self.tasks if task.status != "COMPLETED" and task.weekly_target_count > counts.get(task.id, 0)]}
 

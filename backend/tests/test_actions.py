@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
 from app import database as db
-from app.actions import ActionService
+from app.actions import ActionService, ApprovalSelection
 from app.cli import review_actions
 from app.errors import ConflictError
 from app.inputs import ManualPlanInput, ScheduleInput
@@ -85,6 +85,57 @@ def test_approve_creates_exact_review_once(service):
     assert service.get_task(task.id).status == "PLANNED"
     with pytest.raises(ConflictError):
         actions.reject(response["action_id"])
+
+
+def test_approve_selected_block_discards_unselected_blocks(service):
+    first = service.add_task("Exercise", 60, count=2)
+    second = service.add_task("Study", 60, count=2)
+    review = service.render_proposal(Proposal(explanation="Two alternatives", assignments=[
+        {"task_id": first.id, "slot_id": START.isoformat()},
+        {"task_id": second.id, "slot_id": (START + timedelta(hours=1)).isoformat()},
+    ]))
+    response = ActionService(service).propose(review)
+
+    executed = ActionService(service).approve(response["action_id"], ApprovalSelection(
+        block_indexes=[1], change_indexes=[], schedule_indexes=[]))
+
+    assert executed["result"]["created_plan_ids"]
+    saved = service.list_plans()
+    assert len(saved) == 1
+    assert saved[0]["task_id"] == second.id
+    assert service.get_task(first.id).status == "TODO"
+    assert service.get_task(second.id).status == "PLANNED"
+
+
+def test_agent_schedule_is_saved_only_after_approval(service):
+    wedding_start = START + timedelta(days=5, hours=-2)
+    rendered = service.render_proposal(Proposal(
+        explanation="토요일 17시 결혼식을 2시간 일정으로 제안합니다.", assignments=[], schedules=[{
+            "title": "동료 결혼식", "start_datetime": wedding_start,
+            "end_datetime": wedding_start + timedelta(hours=2), "description": "종료 시각 미입력으로 2시간 가정", "fixed": True,
+        }]))
+    before = service.list_schedules()
+    response = ActionService(service).propose(rendered)
+    assert response["schedules"][0]["title"] == "동료 결혼식"
+    assert service.list_schedules() == before
+
+    executed = ActionService(service).approve(response["action_id"])
+
+    saved = service.list_schedules()
+    assert len(saved) == 1 and saved[0]["title"] == "동료 결혼식"
+    assert executed["result"]["created_schedule_ids"] == [saved[0]["id"]]
+
+
+def test_empty_or_invalid_selection_does_not_execute(service):
+    _, response = pending(service)
+    actions = ActionService(service)
+    with pytest.raises(ConflictError):
+        actions.approve(response["action_id"], ApprovalSelection(
+            block_indexes=[], change_indexes=[], schedule_indexes=[]))
+    with pytest.raises(ConflictError):
+        actions.approve(response["action_id"], ApprovalSelection(block_indexes=[1]))
+    assert actions.get(response["action_id"])["status"] == "PENDING"
+    assert service.list_plans() == []
 
 
 def test_reject_is_idempotent_and_prevents_execution(service):

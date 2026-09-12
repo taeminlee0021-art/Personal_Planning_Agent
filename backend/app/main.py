@@ -10,12 +10,12 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from openai import OpenAI, OpenAIError
+from openai import APIConnectionError, APITimeoutError, AuthenticationError, BadRequestError, OpenAI, OpenAIError, RateLimitError
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 
-from app.agent import PlanningAgent
+from app.agent import AgentExecutionError, PlanningAgent
 from app.api.routes import router
 from app.database import Database
 from app.errors import ConflictError, NotFoundError
@@ -29,7 +29,10 @@ class AgentUnavailable(Exception):
 
 
 class AgentFailed(Exception):
-    pass
+    def __init__(self, code="agent_failed", message="플래너가 유효한 계획을 만들지 못했습니다. 다시 시도해 주세요."):
+        self.code = code
+        self.public_message = message
+        super().__init__(code)
 
 
 def run_agent(service, message):
@@ -40,11 +43,33 @@ def run_agent(service, message):
     try:
         with OpenAI(api_key=key, timeout=60, max_retries=0) as client:
             return PlanningAgent(client, model, service).run(message)
+    except AuthenticationError:
+        raise AgentFailed("agent_authentication_failed", "OpenAI API 인증에 실패했습니다. 서버의 API 키를 확인해 주세요.") from None
+    except RateLimitError:
+        raise AgentFailed("agent_rate_limited", "OpenAI 요청 한도 또는 결제 한도에 도달했습니다. 잠시 후 사용량을 확인해 주세요.") from None
+    except APITimeoutError:
+        raise AgentFailed("agent_timeout", "OpenAI 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.") from None
+    except APIConnectionError:
+        raise AgentFailed("agent_connection_failed", "OpenAI 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.") from None
+    except BadRequestError:
+        raise AgentFailed("agent_request_rejected", "OpenAI가 플래너 요청 형식을 거절했습니다.") from None
     except OpenAIError:
-        raise AgentFailed() from None
+        raise AgentFailed("agent_upstream_failed", "OpenAI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.") from None
+    except AgentExecutionError as exc:
+        messages = {
+            "agent_output_limit": "응답 길이 제한으로 계획 생성이 중단되었습니다. 요청 범위를 줄여 주세요.",
+            "agent_response_incomplete": "OpenAI 응답이 완성되지 않았습니다. 다시 시도해 주세요.",
+            "agent_response_failed": "OpenAI가 응답 생성을 완료하지 못했습니다. 다시 시도해 주세요.",
+            "agent_response_cancelled": "OpenAI 응답 생성이 취소되었습니다. 다시 시도해 주세요.",
+            "agent_missing_tool_data": "플래너가 필요한 일정 데이터를 모두 확인하지 못했습니다.",
+            "agent_invalid_proposal": "생성된 계획이 시간·중복·목표 제약 검증을 두 번 통과하지 못했습니다.",
+            "agent_tool_arguments_invalid": "플래너가 내부 조회 도구에 잘못된 인수를 전달했습니다.",
+            "agent_round_limit": "플래너가 제한된 처리 단계 안에 계획을 완성하지 못했습니다.",
+        }
+        raise AgentFailed(exc.code, messages[exc.code]) from None
     except (ValueError, ValidationError):
         # Do not expose raw model output, upstream error bodies or credentials.
-        raise AgentFailed() from None
+        raise AgentFailed("agent_internal_validation", "플래너 내부 검증 중 오류가 발생했습니다.") from None
 
 
 def error(status, code, message):
@@ -130,7 +155,8 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
 
     @app.exception_handler(AgentFailed)
     async def agent_failed(request, exc):
-        return error(502, "agent_failed", "The Agent could not return a valid proposal. Please retry.")
+        log.error("agent_failed code=%s", exc.code)
+        return error(502, exc.code, exc.public_message)
 
     app.include_router(router)
     return app

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -14,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from app import database as db
 from app.agent import PlanningAgent
 from app.cli import menu
-from app.inputs import ManualPlanInput, ScheduleInput
+from app.inputs import BodySettingsInput, ManualPlanInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
 from app.models import Proposal
 from app.planning import KST, Preferences
 from app.storage_service import DatabasePlanningService
@@ -79,6 +80,7 @@ def test_postgresql_url_selects_psycopg(monkeypatch):
 
     monkeypatch.setattr(db, "create_engine", fake_create_engine)
     monkeypatch.setattr(db.metadata, "create_all", lambda engine: None)
+    monkeypatch.setattr(db, "inspect", lambda engine: SimpleNamespace(get_table_names=lambda: []))
 
     database = db.Database(
         "postgresql://planner:p%40ss@example.neon.tech/planning?sslmode=require"
@@ -91,6 +93,38 @@ def test_postgresql_url_selects_psycopg(monkeypatch):
     assert captured["options"]["pool_pre_ping"] is True
     assert captured["options"]["hide_parameters"] is True
     assert database.path is None
+
+
+def test_existing_recurring_table_gains_start_date_without_losing_rows(tmp_path):
+    path = tmp_path / "prior-recurring.db"
+    connection = sqlite3.connect(path)
+    connection.execute("""
+        CREATE TABLE recurring_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title VARCHAR(120) NOT NULL,
+            cadence VARCHAR(10) NOT NULL,
+            weekdays JSON NOT NULL,
+            active BOOLEAN NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """)
+    connection.execute(
+        "INSERT INTO recurring_tasks (title, cadence, weekdays, active, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("기존 반복", "DAILY", "[]", 1, "2026-09-01 00:00:00", "2026-09-01 00:00:00"),
+    )
+    connection.commit()
+    connection.close()
+
+    database = db.Database(path)
+    try:
+        rows = DatabasePlanningService(database, now=NOW).list_recurring_tasks()
+        assert len(rows) == 1
+        assert rows[0]["title"] == "기존 반복"
+        assert rows[0]["start_date"] == "2026-09-01"
+    finally:
+        database.close()
 
 
 def test_task_crud_and_id_not_reused(service):
@@ -118,10 +152,227 @@ def test_invalid_task_edit_rolls_back(service, change):
 
 def test_schedule_crud(service):
     row = service.save_schedule(schedule())
+    assert row["completed"] is False
+    assert service.set_schedule_completed(row["id"], True)["completed"] is True
     updated = service.save_schedule(schedule(START + timedelta(hours=1), title="Changed"), row["id"])
     assert updated["title"] == "Changed"
+    assert updated["completed"] is True
     service.delete_schedule(row["id"])
     assert service.list_schedules() == []
+
+
+def test_existing_schedule_table_gains_completion_column(tmp_path):
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE schedules ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, title VARCHAR(120) NOT NULL, "
+            "start_datetime DATETIME NOT NULL, end_datetime DATETIME NOT NULL, "
+            "description VARCHAR(2000) NOT NULL, fixed BOOLEAN NOT NULL)"
+        )
+
+    database = db.Database(path)
+    try:
+        service = DatabasePlanningService(database, now=NOW)
+        row = service.save_schedule(schedule())
+        assert row["completed"] is False
+        with sqlite3.connect(path) as connection:
+            assert "completed" in {column[1] for column in connection.execute("PRAGMA table_info(schedules)")}
+    finally:
+        database.close()
+
+
+def test_sunday_weight_prompt_record_and_height(tmp_path):
+    database = db.Database(tmp_path / "body.db")
+    sunday = NOW + timedelta(days=6)
+    try:
+        service = DatabasePlanningService(database, now=sunday)
+        assert service.get_body_settings() == {"height_cm": 176.0}
+        assert service.save_body_settings(BodySettingsInput(height_cm=175.5)) == {"height_cm": 175.5}
+
+        prompts = [item for item in service.list_today_items() if item["title"] == "몸무게 기록"]
+        assert len(prompts) == 1 and prompts[0]["status"] == "TODO"
+
+        first = service.save_weight_record(WeightRecordInput(weight_kg=72.4))
+        assert first["measured_on"] == sunday.date().isoformat()
+        assert service.list_today_items()[-1]["status"] == "COMPLETED"
+
+        updated = service.save_weight_record(WeightRecordInput(
+            measured_on=sunday.date(), weight_kg=71.9
+        ))
+        assert updated["id"] == first["id"]
+        assert [item["weight_kg"] for item in service.list_weight_records()] == [71.9]
+
+        service.delete_weight_record(first["id"])
+        assert service.list_weight_records() == []
+        assert service.list_today_items()[-1]["status"] == "TODO"
+    finally:
+        database.close()
+
+
+def test_daily_and_weekly_rules_materialize_once_for_today(service):
+    daily = service.save_recurring_task(RecurringTaskInput(
+        title="물 마시기", cadence="DAILY"
+    ))
+    monday = service.save_recurring_task(RecurringTaskInput(
+        title="주간 정리", cadence="WEEKLY", weekdays=[0, 3]
+    ))
+    service.save_recurring_task(RecurringTaskInput(
+        title="화요일 운동", cadence="WEEKLY", weekdays=[1]
+    ))
+
+    first = service.list_today_items()
+    second = service.list_today_items()
+
+    assert [(item["title"], item["source"]) for item in first] == [
+        ("물 마시기", "RECURRING"), ("주간 정리", "RECURRING")
+    ]
+    assert second == first
+    assert {item["recurrence_id"] for item in first} == {daily["id"], monday["id"]}
+
+
+def test_recurring_rule_starts_on_selected_date(service):
+    tomorrow = NOW.date() + timedelta(days=1)
+    saved = service.save_recurring_task(RecurringTaskInput(
+        title="내일부터 스트레칭", cadence="DAILY", start_date=tomorrow
+    ))
+    assert saved["start_date"] == tomorrow.isoformat()
+    assert service.list_today_items() == []
+
+    service._now = NOW + timedelta(days=1)
+    items = service.list_today_items()
+    assert [item["title"] for item in items] == ["내일부터 스트레칭"]
+
+
+def test_recurring_rule_without_start_date_defaults_to_korean_today(service):
+    saved = service.save_recurring_task(RecurringTaskInput(
+        title="오늘 시작", cadence="WEEKLY", weekdays=[0]
+    ))
+    assert saved["start_date"] == NOW.date().isoformat()
+
+
+def test_today_item_crud_and_rule_history_are_independent(service):
+    manual = service.create_today_item(TodayItemInput(title="우유 사기"))
+    completed = service.update_today_item(manual["id"], "COMPLETED")
+    assert completed["status"] == "COMPLETED"
+
+    rule = service.save_recurring_task(RecurringTaskInput(
+        title="스트레칭", cadence="DAILY"
+    ))
+    recurring = next(item for item in service.list_today_items() if item["recurrence_id"] == rule["id"])
+    service.delete_recurring_task(rule["id"])
+
+    kept = next(item for item in service.list_today_items() if item["id"] == recurring["id"])
+    assert kept["recurrence_id"] is None
+    assert kept["title"] == "스트레칭"
+    service.delete_today_item(manual["id"])
+    assert all(item["id"] != manual["id"] for item in service.list_today_items())
+
+
+def test_today_item_order_is_persisted_and_requires_complete_current_list(service):
+    first = service.create_today_item(TodayItemInput(title="첫째"))
+    second = service.create_today_item(TodayItemInput(title="둘째"))
+    third = service.create_today_item(TodayItemInput(title="셋째"))
+
+    reordered = service.reorder_today_items([third["id"], first["id"], second["id"]])
+    assert [item["title"] for item in reordered] == ["셋째", "첫째", "둘째"]
+    assert [item["order_index"] for item in reordered] == [1, 2, 3]
+    assert [item["id"] for item in service.list_today_items()] == [
+        third["id"], first["id"], second["id"]
+    ]
+
+    with pytest.raises(ValueError, match="every current Today item"):
+        service.reorder_today_items([first["id"], second["id"]])
+    assert [item["id"] for item in service.list_today_items()] == [
+        third["id"], first["id"], second["id"]
+    ]
+
+
+def test_week_today_items_keeps_prior_day_history(service):
+    prior = service.create_today_item(TodayItemInput(title="월요일 할 일"))
+    service._now = NOW + timedelta(days=1)
+    current = service.create_today_item(TodayItemInput(title="화요일 할 일"))
+
+    week = service.list_week_today_items()
+    assert [item["id"] for item in week] == [prior["id"], current["id"]]
+    assert [item["item_date"] for item in week] == ["2026-09-07", "2026-09-08"]
+    assert [item["title"] for item in service.list_today_items()] == ["화요일 할 일"]
+
+def test_water_drinking_needs_four_500ml_steps(service):
+    rule = service.save_recurring_task(RecurringTaskInput(
+        title="물 2L 마시기", cadence="DAILY"
+    ))
+    item = next(value for value in service.list_today_items()
+                if value["recurrence_id"] == rule["id"])
+    assert item["completion_target"] == 4
+    assert item["completion_count"] == 0
+
+    for expected in range(1, 4):
+        item = service.update_today_item(item["id"], "COMPLETED")
+        assert item["completion_count"] == expected
+        assert item["status"] == "TODO"
+    item = service.update_today_item(item["id"], "COMPLETED")
+    assert item["completion_count"] == 4
+    assert item["status"] == "COMPLETED"
+
+    reset = service.update_today_item(item["id"], "TODO")
+    assert reset["completion_count"] == 0
+    assert reset["status"] == "TODO"
+
+    with service.database.transaction(write=True) as repository:
+        repository.update(db.today_items, item["id"], {
+            "completion_target": 1, "completion_count": 0, "status": "COMPLETED"
+        })
+    converted = next(value for value in service.list_today_items()
+                     if value["id"] == item["id"])
+    assert converted["completion_target"] == 4
+    assert converted["completion_count"] == 1
+    assert converted["status"] == "TODO"
+
+
+def test_saved_task_can_be_added_to_today_and_completion_stays_in_sync(service):
+    task = service.add_task("냉장고 청소하기", 45)
+    item = service.create_today_item_from_task(task.id)
+    assert item["source"] == "TASK"
+    assert item["task_id"] == task.id
+    assert service.get_task(task.id).status == "TODO"
+
+    with pytest.raises(ValueError, match="already in Today"):
+        service.create_today_item_from_task(task.id)
+
+    completed = service.update_today_item(item["id"], "COMPLETED")
+    assert completed["status"] == "COMPLETED"
+    assert service.get_task(task.id).status == "COMPLETED"
+    service.update_today_item(item["id"], "TODO")
+    assert service.get_task(task.id).status == "TODO"
+    service.update_task(task.id, status="COMPLETED")
+    synced = next(value for value in service.list_today_items()
+                  if value["id"] == item["id"])
+    assert synced["status"] == "COMPLETED"
+
+    service.delete_today_item(item["id"])
+    assert service.get_task(task.id).title == "냉장고 청소하기"
+
+
+def test_inactive_and_nonmatching_rules_do_not_materialize(service):
+    service.save_recurring_task(RecurringTaskInput(
+        title="비활성", cadence="DAILY", active=False
+    ))
+    service.save_recurring_task(RecurringTaskInput(
+        title="금요일", cadence="WEEKLY", weekdays=[4]
+    ))
+    assert service.list_today_items() == []
+
+
+@pytest.mark.parametrize("values", [
+    {"title": "Bad", "cadence": "WEEKLY", "weekdays": []},
+    {"title": "Bad", "cadence": "DAILY", "weekdays": [0]},
+    {"title": "Bad", "cadence": "WEEKLY", "weekdays": [7]},
+    {"title": "Bad", "cadence": "WEEKLY", "weekdays": [1, 1]},
+])
+def test_recurring_input_validation(values):
+    with pytest.raises(ValidationError):
+        RecurringTaskInput(**values)
 
 
 @pytest.mark.parametrize("values", [
@@ -143,6 +394,9 @@ def test_manual_plan_create_move_complete_delete(service):
     assert len(service.get_current_plan()) == 1
     assert service.complete_plan(row["id"])["status"] == "COMPLETED"
     assert service.get_task(task.id).status == "TODO"  # recurring task remains available
+    assert service.set_plan_status(row["id"], "PLANNED")["status"] == "PLANNED"
+    assert service.get_task(task.id).status == "PLANNED"
+    assert service.complete_plan(row["id"])["status"] == "COMPLETED"
     with pytest.raises(ValueError, match="Completed"):
         service.save_manual_plan(plan(task.id, START + timedelta(days=2)), row["id"])
     service.delete_plan(row["id"])

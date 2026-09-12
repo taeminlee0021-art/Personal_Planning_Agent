@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
@@ -17,12 +17,13 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<TaskDraft>(emptyTask)
 
-  useEffect(() => {
-    if (open) setDraft(task ? {
+  function changeOpen(nextOpen: boolean) {
+    if (nextOpen) setDraft(task ? {
       title: task.title, description: task.description, estimated_minutes: task.estimated_minutes,
       priority: task.priority, due_date: task.due_date, category: task.category, weekly_target_count: task.weekly_target_count,
     } : emptyTask)
-  }, [open, task])
+    setOpen(nextOpen)
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault(); setSaving(true)
@@ -35,7 +36,7 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
     finally { setSaving(false) }
   }
 
-  return <Dialog open={open} onOpenChange={setOpen}>
+  return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger asChild>{trigger}</DialogTrigger>
     <DialogContent className="max-h-[90svh] overflow-y-auto rounded-2xl sm:max-w-xl">
       <DialogHeader><DialogTitle>{task ? "할 일 수정" : "새 할 일"}</DialogTitle><DialogDescription>계획에 필요한 핵심 정보만 입력하세요. 날짜가 없으면 이번 주 안에서 배치합니다.</DialogDescription></DialogHeader>
@@ -44,7 +45,7 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
         <label className="grid gap-1.5 text-sm font-medium">설명<Textarea maxLength={2000} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="필요한 내용을 간단히 적어 주세요." /></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="grid gap-1.5 text-sm font-medium">예상 시간(분)<Input required type="number" min={1} max={120} value={draft.estimated_minutes} onChange={(e) => setDraft({ ...draft, estimated_minutes: Number(e.target.value) })} /></label>
-          <label className="grid gap-1.5 text-sm font-medium">주간 횟수<Input required type="number" min={1} max={7} value={draft.weekly_target_count} onChange={(e) => setDraft({ ...draft, weekly_target_count: Number(e.target.value) })} /></label>
+          <label className="grid gap-1.5 text-sm font-medium">계획 횟수<Input required type="number" min={1} max={7} value={draft.weekly_target_count} onChange={(e) => setDraft({ ...draft, weekly_target_count: Number(e.target.value) })} /></label>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="grid gap-1.5 text-sm font-medium">우선순위<Select value={draft.priority} onValueChange={(value) => setDraft({ ...draft, priority: value as Priority })}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">낮음</SelectItem><SelectItem value="MEDIUM">보통</SelectItem><SelectItem value="HIGH">높음</SelectItem></SelectContent></Select></label>

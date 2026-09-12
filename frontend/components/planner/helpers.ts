@@ -1,6 +1,6 @@
 import type { Preferences, Priority, ScheduleDraft, TaskDraft } from "@/lib/types"
 
-export type View = "today" | "tasks" | "week" | "agent"
+export type View = "today" | "tasks" | "week" | "weight" | "agent" | "settings"
 
 export const emptyTask: TaskDraft = {
   title: "", description: "", estimated_minutes: 60, priority: "MEDIUM",

@@ -1308,3 +1308,251 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - External deployment still requires creating/selecting the user's Neon project,
   entering its connection string and the backend secrets in Render, then setting
   the deployed backend URL in Sites and privately publishing the registered frontend.
+- Pushed the free-deployment changes to origin/main in commit 7a09a1f. The existing
+  frontend commit 7098a5c was pushed to the private Sites source repository and
+  saved as Sites version 1 using remote-build fallback after the Windows packaging
+  helper could not start. It has not been deployed because BACKEND_API_URL is not
+  available yet.
+- The user completed Neon login, but the Windows browser automation runtime exited
+  twice during state initialization. The remaining account UI steps must therefore
+  be completed by the user: copy the pooled Neon URL into the Render Blueprint,
+  enter the existing server secrets, deploy, and return the public backend URL.
+- The user completed the Render Blueprint and provided
+  https://personal-planning-agent-api-64ij.onrender.com. Production verification
+  returned 200 from /health and 401 from a direct unauthenticated /api/tasks call.
+  Sites BACKEND_API_URL now points to that Render origin while the existing secret
+  APP_INTERNAL_TOKEN remains server-side.
+- Private Sites deployment version 1 succeeded with environment revision 2. The
+  owner-only production URL is
+  https://personal-planning-agent.team621.chatgpt.site.
+
+## 2026-09-11 - Local Today quick entry and recurring settings
+
+- The user requested that feature changes remain local until several changes are
+  ready for one later deployment. No commit, push, Sites upload or deployment was
+  performed for this feature.
+- Added a primary Today checklist with a single-line quick-entry field. Pressing
+  Enter saves a manual item immediately without an LLM call; items can be completed,
+  reopened and deleted. Timed plan blocks and the Agent request remain available
+  as secondary Today content.
+- Added a Settings area for DAILY rules and WEEKLY rules with one or more selectable
+  weekdays. Active rules materialize exactly one Today item on a matching date when
+  Today data is requested. Existing generated items retain their title and history
+  after a rule is edited or deleted.
+- Added recurring_tasks and today_items tables, validated FastAPI CRUD endpoints,
+  frontend API/types, responsive desktop sidebar and five-item mobile navigation.
+  Planning availability preferences moved from Week to Settings.
+- Deterministic recurrence uses Asia/Seoul dates and performs no background or LLM
+  work. Opening or refreshing Today is the materialization trigger.
+- Verification: 173 backend tests passed with the existing two upstream warnings;
+  frontend lint and the production Vinext build passed. A separate local preview database
+  verified manual create/complete and idempotent daily materialization through the
+  same-origin frontend proxy. Desktop and 500px mobile captures verified the
+  responsive Today layout; the mobile sidebar remains hidden and all five bottom
+  navigation items fit without horizontal scrolling.
+
+## 2026-09-11 - Local weekly recurrence, water progress and task inbox
+
+- The user clarified that active recurring rules must also appear in Weekly Plan.
+  Week now previews DAILY rules on all seven days and WEEKLY rules on selected
+  weekdays as untimed recurring items; they do not occupy a calculated time slot.
+- Today items whose title contains both the Korean words for water and drinking
+  use a persisted four-step target. Each completion press records 500 ml, the
+  fourth press completes 2 L, and pressing the completed item resets it to zero.
+  Existing local water rows are converted to the new target without data loss.
+- Reframed Tasks as an inbox for irregular, one-off work such as cleaning the
+  refrigerator. An unfinished saved task can be added to Today once per date.
+  Completion and reopening stay synchronized in both directions; deleting the
+  Today occurrence preserves the saved task.
+- Added nullable task linkage and persisted completion count/target to today_items,
+  including a narrow additive SQLite compatibility upgrade for the immediately
+  preceding local-only schema. Added the from-task API and responsive controls.
+- Verification: 176 backend tests passed with the existing two upstream warnings;
+  frontend lint and production Vinext build passed. The running isolated local
+  preview confirmed that the pre-existing water item migrated to a 0/4 target.
+  No commit, push, Sites source upload or deployment was performed.
+
+## 2026-09-11 - Local Today ordering and weekly visibility
+
+- The user requested six related local-only improvements and reiterated the
+  accumulate-first deployment workflow. No commit, push, Sites source upload or
+  deployment was performed.
+- Added a persisted order_index to Today items and an all-items reorder endpoint.
+  Existing SQLite rows receive their prior id order through the targeted additive
+  compatibility upgrade. The Today UI now provides a mouse drag handle, applies
+  an optimistic reorder and restores server order if saving fails.
+- Today MANUAL and TASK occurrences now remain visible on their matching day in
+  Weekly Plan for the whole current week, including prior days. RECURRING
+  occurrences are omitted there because their rules
+  are already previewed for every applicable day. A task-linked Today occurrence
+  is also omitted when that task already has a timed plan on the same date.
+- Added a focused weekly activity summary for Health, Real Estate Study and Job
+  Search Preparation, showing planned and executed counts. Timed plan blocks,
+  matching recurring rules and matching Today occurrences are counted without
+  double-counting the current day. The desktop sidebar now
+  uses aggregate weekly targets and executions instead of plan-row completion,
+  which previously produced 0/0 whenever no timed plan rows existed.
+- Tasks due today or within 14 days receive an amber D-day badge and card border;
+  overdue tasks receive a stronger red warning. Tasks without a deadline are
+  visually unchanged.
+- Local logs confirmed the reported Planner failure was a 502 caused by a
+  ValueError after the model call. Raw model output and personal requests are not
+  logged, so the exact validation subtype was intentionally unavailable. The
+  Agent now makes one bounded retry for incomplete model responses and one for a
+  structured proposal rejected by deterministic validation, then fails safely as
+  before. Automated tests cover both repair paths without paid API calls.
+- Verification: 182 backend tests passed on Python 3.14.5 with the existing two
+  upstream Starlette warnings. Frontend lint and the direct pnpm/Vinext production
+  build passed. Local same-origin smoke returned the page and Today list with 200,
+  confirmed order_index and weekly history, and persisted a no-op reorder with 200 against the
+  isolated preview database. Windows visual automation failed twice during
+  sandbox initialization, so this turn relied on compile, build and HTTP checks.
+
+## 2026-09-12 - Local fixed-event proposals and selective approval
+
+- The user requested six more changes while retaining the accumulate-locally,
+  deploy-once-later workflow. No commit, push, Sites source upload or deployment
+  was performed.
+- PlanningAgent structured output now includes proposed fixed schedules. A new
+  appointment, ceremony or meeting in the request is represented directly rather
+  than replaced with an existing task. Exact user-supplied start times are kept;
+  when duration/end is absent the Agent is instructed to state and use a two-hour
+  assumption. Proposed events remain unsaved until approval.
+- Pending reviews now support selecting individual new plans, moves/deletions and
+  fixed schedules. Only selected items are revalidated and executed atomically;
+  empty, duplicate or out-of-range selections fail without writes. The web review
+  presents a checkbox for every proposal item and defaults to all selected.
+- Sidebar weekly completion is now derived from the actual Weekly Plan dataset:
+  timed plan rows, unmatched checklist occurrences and active recurring-rule
+  occurrences. Task-inbox weekly_target_count values no longer drive this number.
+  Fixed schedules are excluded because they currently have no completion state.
+- The Today badge is beside the numeric date in Weekly Plan. Completed timed
+  plans, checklist rows and recurring occurrences render after all unfinished
+  work at the bottom of each day card.
+- Settings includes an OpenAI API credit card linking to the official billing
+  overview. It explicitly avoids fabricating an automatic balance: the normal
+  project API key cannot retrieve remaining prepaid credit, while the official
+  organization Costs API requires an Admin key and reports spend rather than the
+  prepaid balance.
+- Verification: 186 backend tests passed on Python 3.14.5 with the existing two
+  upstream Starlette warnings. Frontend ESLint and the Vinext production build
+  passed. Real paid model execution remains intentionally untested.
+
+## 2026-09-12 - Local Agent diagnostics, Today schedules and recurrence start
+
+- The user requested three more local-only improvements. No commit, push, Sites
+  source upload, deployment or paid model invocation was performed.
+- Local server history confirmed one intermittent Agent request ended as a generic
+  ValueError and returned 502, while a later request succeeded after proposal
+  repair. The old privacy-safe log retained no subtype, so the exact historical
+  validation rule cannot be reconstructed.
+- Agent failures now use safe stable categories for authentication, rate limits,
+  timeout, connection, upstream rejection, incomplete/max-token responses,
+  missing tool data, invalid tool arguments, round exhaustion and twice-invalid
+  deterministic proposals. The API returns a specific code and Korean recovery
+  message; the frontend keeps it in a visible Agent error card as well as a toast.
+  Raw upstream bodies, model output, personal requests and credentials remain hidden.
+  During mandatory data collection each round now exposes only the unread tools,
+  preventing repeated reads from consuming the bounded round budget intermittently.
+- Today now includes same-day fixed schedules alongside generated/manual plans in
+  the `시간이 정해진 계획` section. This closes the gap where an approved fixed
+  event appeared in Weekly Plan but not Today. Fixed schedules remain non-checkable
+  because they have no completion state and do not consume personal planning minutes.
+- Recurring tasks now have a start_date. DAILY and WEEKLY materialization and week
+  previews ignore dates before it; weekly progress also counts only occurrences on
+  or after the start. Existing SQLite/PostgreSQL recurring tables receive the column,
+  with existing rows backfilled from created_at. New omitted start dates default to
+  the current Asia/Seoul date.
+- Verification: 192 backend tests passed with the existing two upstream Starlette
+  warnings. Frontend ESLint and direct Vinext production build passed. The Sites
+  Windows build wrapper still exits with a path error, so the documented direct
+  project build was used. Local page and recurrence/plans/schedules API smoke checks
+  returned 200 and confirmed start_date output. Windows visual automation exited
+  twice during initialization; compile/build/HTTP checks remain the visual fallback.
+
+## 2026-09-12 - Local UI simplification and timed-plan completion
+
+- The user requested another local-only UI refinement. No commit, push, Sites
+  source upload, deployment or paid model invocation was performed.
+- The web review no longer shows the unallocated-count warning, while the backend
+  retains unallocated proposal data for validation and compatibility. The Today
+  planning-slack card and its calculated remaining-minute display were removed.
+  Actual timed plans and deterministic availability constraints remain unchanged.
+- Added a narrow plan-status API that accepts only PLANNED or COMPLETED. Today
+  timed plan rows now provide an accessible circular completion checkbox, persist
+  the state, support reopening, and refresh weekly ordering and progress. Fixed
+  schedules remain non-checkable because they are appointments rather than plans.
+- Weekly day cards use two columns at medium widths and seven only at extra-wide
+  widths. Long titles are capped at two lines with full hover text; time labels do
+  not wrap. Fixed-event edit/delete controls now occupy a separate footer row so
+  they no longer squeeze or collide with titles.
+- Verification: 194 backend tests passed on Python 3.14.5 with the existing two
+  upstream Starlette warnings. Frontend ESLint and direct Vinext production build
+  passed. The Sites Windows build wrapper still exits with a path error, so the
+  direct project build was used as the documented portable fallback.
+
+## 2026-09-12 - Local completed sections and fixed-schedule completion
+
+- This entry supersedes the earlier limitation that fixed schedules are
+  non-checkable. The user requested three additional local-only UI changes; the
+  fourth numbered item was empty. No commit, push, Sites upload or deployment
+  was performed.
+- Today checklist rows are grouped deterministically: unfinished rows remain in
+  the main section and completed rows move under a dedicated completed heading,
+  retaining strike-through styling. Completed rows do not expose drag handles;
+  reopening returns them to the unfinished group.
+- Both saved plans and fixed schedules in Today's timed section now expose an
+  accessible completion checkbox. Added a strict boolean schedule-status API and
+  a persisted schedules.completed column. Existing SQLite and PostgreSQL tables
+  gain the column with a false default; editing a schedule preserves its state.
+- Completed fixed schedules render with the other completed Weekly Plan rows and
+  contribute to the sidebar's weekly target and completed counts. Weekly cards
+  no longer display the phrase `시간 미정`; they retain only useful source/status
+  labels such as checklist, recurring and completed.
+- Verification: 196 backend tests passed with the existing two upstream
+  Starlette warnings. Frontend ESLint and the direct Vinext production build
+  passed. Local page and schedules API smoke checks returned 200 and confirmed
+  the compatibility-added completed field. The Sites Windows build wrapper and
+  Windows visual automation still fail during sandbox/path initialization.
+
+## 2026-09-12 - Local weekly weight tracking and BMI
+
+- The user requested a more visibly separate Today completed area plus a new
+  weekly body-weight workflow. No commit, push, Sites upload or deployment was
+  performed.
+- Today's completed checklist is now a separate muted card rather than a heading
+  inside the active checklist card. Strike-through remains, completed rows omit
+  drag handles, and reopening returns normal items to the active card.
+- Added singleton body settings with the user's 176 cm height and durable weight
+  records keyed by measurement date. Re-entering the same date updates its record.
+  The API validates finite heights from above 50 through 250 cm and weights from
+  20 through 400 kg. BMI is calculated deterministically in the UI as kg/m² and
+  is presented as a reference number without medical categorization.
+- Added a responsive Weight tab with the latest measurement, BMI, editable height,
+  measurement form and an accessible Recharts line graph for the latest 16 records.
+  Desktop sidebar and mobile bottom navigation both expose the new view.
+- On Sundays, Today materialization creates one protected `몸무게 기록` prompt.
+  Its title and check target navigate to Weight instead of manually completing it.
+  Saving a record for that date completes the prompt; deleting the record through
+  the service/API reopens it. No LLM call is involved.
+- Verification: 201 backend tests passed with the existing two upstream Starlette
+  warnings. Frontend ESLint and the direct Vinext production build passed. The
+  build reports a non-blocking >500 kB chunk warning after adding Recharts. Local
+  page, body settings, weight history and Today APIs returned 200 and confirmed
+  the 176 cm default. The Sites Windows wrapper and visual automation still fail
+  during local sandbox/path initialization.
+
+## 2026-09-12 - Integrated deployment release candidate
+
+- The user explicitly authorized publishing all accumulated local changes to
+  GitHub main, the Render backend and the existing owner-private Sites project.
+- Local test weight records were deleted through the application API and verified
+  as an empty JSON list. The 176 cm body setting and all unrelated planning data
+  were preserved. SQLite database files remain ignored and are not deployed.
+- Release verification before publishing: 201 backend tests passed with two
+  upstream Starlette warnings; frontend ESLint and the direct Vinext production
+  build passed with one non-blocking chunk-size warning. Secret-pattern and
+  whitespace checks passed.
+- Deployment targets remain the existing Render service and existing private
+  Sites project. This entry records authorization and the exact release candidate;
+  terminal deployment status is verified through the hosting providers.

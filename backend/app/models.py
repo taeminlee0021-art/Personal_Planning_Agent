@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class Model(BaseModel):
@@ -41,8 +41,23 @@ class PlanChange(Model):
         return self
 
 
+class ScheduleProposal(Model):
+    title: str = Field(min_length=1, max_length=120)
+    start_datetime: AwareDatetime
+    end_datetime: AwareDatetime
+    description: str = Field(max_length=2000)
+    fixed: Literal[True]
+
+    @model_validator(mode="after")
+    def valid_range(self):
+        if self.end_datetime <= self.start_datetime:
+            raise ValueError("Schedule end must be after start")
+        return self
+
+
 class Proposal(Model):
     explanation: str = Field(min_length=1, max_length=4000)
     assignments: list[Assignment] = Field(max_length=49)
 
     changes: list[PlanChange] = Field(default_factory=list, max_length=49)
+    schedules: list[ScheduleProposal] = Field(default_factory=list, max_length=49)

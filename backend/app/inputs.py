@@ -1,8 +1,8 @@
 """Validated structured input for direct user writes, not Agent actions."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from app.models import Model
 from app.planning import TimeRange
 
@@ -30,3 +30,39 @@ class ManualPlanInput(Model):
         from app.planning import aware
         self.start_datetime = aware(self.start_datetime)
         return self
+
+
+class RecurringTaskInput(Model):
+    title: str = Field(min_length=1, max_length=120)
+    cadence: Literal["DAILY", "WEEKLY"]
+    weekdays: list[int] = Field(default_factory=list, max_length=7)
+    start_date: date | None = None
+    active: bool = True
+
+    @field_validator("weekdays")
+    @classmethod
+    def valid_weekdays(cls, value):
+        if any(day < 0 or day > 6 for day in value) or len(value) != len(set(value)):
+            raise ValueError("Weekdays must be unique values from 0 to 6")
+        return sorted(value)
+
+    @model_validator(mode="after")
+    def valid_cadence(self):
+        if self.cadence == "DAILY" and self.weekdays:
+            raise ValueError("Daily recurrence does not use weekdays")
+        if self.cadence == "WEEKLY" and not self.weekdays:
+            raise ValueError("Weekly recurrence needs at least one weekday")
+        return self
+
+
+class TodayItemInput(Model):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class BodySettingsInput(Model):
+    height_cm: float = Field(gt=50, le=250, allow_inf_nan=False)
+
+
+class WeightRecordInput(Model):
+    measured_on: date | None = None
+    weight_kg: float = Field(ge=20, le=400, allow_inf_nan=False)

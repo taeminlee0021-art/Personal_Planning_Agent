@@ -41,6 +41,19 @@ class ReviewChange(Model):
         return self
 
 
+class ReviewSchedule(Model):
+    title: str = Field(min_length=1, max_length=120)
+    start_datetime: AwareDatetime
+    end_datetime: AwareDatetime
+    description: str = Field(max_length=2000)
+    fixed: Literal[True]
+
+    @model_validator(mode="after")
+    def valid_range(self):
+        TimeRange(self.start_datetime, self.end_datetime)
+        return self
+
+
 class Remaining(Model):
     task_id: int
     remaining_count: int = Field(gt=0)
@@ -54,11 +67,12 @@ class Review(Model):
     explanation: str = Field(min_length=1, max_length=4000)
     blocks: list[ReviewBlock] = Field(max_length=49)
     changes: list[ReviewChange] = Field(default_factory=list, max_length=49)
+    schedules: list[ReviewSchedule] = Field(default_factory=list, max_length=49)
     unallocated: list[Remaining]
 
     @model_validator(mode="after")
     def bounded(self):
-        if len(self.blocks) + len(self.changes) > 49:
+        if len(self.blocks) + len(self.changes) + len(self.schedules) > 49:
             raise ValueError("Too many operations")
         return self
 
@@ -67,6 +81,20 @@ class ExecutionResult(Model):
     created_plan_ids: list[int] = Field(default_factory=list)
     updated_plan_ids: list[int] = Field(default_factory=list)
     deleted_plan_ids: list[int] = Field(default_factory=list)
+    created_schedule_ids: list[int] = Field(default_factory=list)
+
+
+class ApprovalSelection(Model):
+    block_indexes: list[int] | None = Field(default=None, max_length=49)
+    change_indexes: list[int] | None = Field(default=None, max_length=49)
+    schedule_indexes: list[int] | None = Field(default=None, max_length=49)
+
+    @model_validator(mode="after")
+    def valid_indexes(self):
+        for values in (self.block_indexes, self.change_indexes, self.schedule_indexes):
+            if values is not None and (any(index < 0 for index in values) or len(values) != len(set(values))):
+                raise ValueError("Selection indexes must be unique non-negative integers")
+        return self
 
 
 class ActionResponse(Model):
@@ -103,11 +131,26 @@ def render_review(service, repository, proposal: Proposal):
             raise ConflictError("Only unfinished plans in the current week can be changed")
         targets[change.plan_id] = row
     snapshot.current_plan = remaining_plans(rows, snapshot.monday, targets)
+    schedule_reviews = [ReviewSchedule.model_validate(item.model_dump()) for item in proposal.schedules]
+    proposed_ranges = [TimeRange(item.start_datetime, item.end_datetime) for item in schedule_reviews]
+    if any(span.end <= snapshot.current_time() or not snapshot.monday <= span.start.date() < snapshot.monday + timedelta(days=7)
+           for span in proposed_ranges):
+        raise ConflictError("Proposed fixed schedules must be upcoming in the current week")
+    if any(span.overlaps(item.time) for span in proposed_ranges for item in snapshot.current_plan):
+        raise ConflictError("A proposed fixed schedule conflicts with a saved plan")
+    existing_schedules = repository.list(db.schedules)
+    for item in schedule_reviews:
+        if any(row["title"] == item.title and row["start_datetime"] == item.start_datetime
+               and row["end_datetime"] == item.end_datetime for row in existing_schedules):
+            raise ConflictError("This fixed schedule already exists")
+        snapshot.schedules.append(item.model_dump(mode="json"))
     assignments = list(proposal.assignments)
     for change in proposal.changes:
         if change.operation == "MOVE":
             assignments.append({"task_id": targets[change.plan_id]["task_id"], "slot_id": change.slot_id})
-    combined = snapshot.render_proposal(Proposal(explanation=proposal.explanation, assignments=assignments))
+    combined = snapshot.render_proposal(Proposal(
+        explanation=proposal.explanation, assignments=assignments, changes=[], schedules=[]
+    ))
     # The engine returns sorted blocks. Resolve by task and start rather than list order.
     available = {(item["task_id"], item["start_datetime"]): item for item in combined["blocks"]}
     moves = []
@@ -123,7 +166,8 @@ def render_review(service, repository, proposal: Proposal):
         moves.append({"operation": change.operation, "plan_id": change.plan_id,
                       "before": json_row(targets[change.plan_id]), "after": after})
     combined["blocks"] = [item for key, item in available.items() if key not in moved_keys]
-    combined.update(changes=moves, week_start=snapshot.monday.isoformat())
+    combined.update(changes=moves, schedules=[item.model_dump(mode="json") for item in schedule_reviews],
+                    week_start=snapshot.monday.isoformat())
     return Review.model_validate(combined).model_dump(mode="json")
 
 
@@ -164,6 +208,17 @@ class ActionService:
                 raise ConflictError("Moving a plan cannot change its task")
         rows = repository.list(db.plans)
         existing = remaining_plans(rows, snapshot.monday, targets)
+        schedule_ranges = [TimeRange(item.start_datetime, item.end_datetime) for item in review.schedules]
+        if any(span.end <= snapshot.current_time() or not snapshot.monday <= span.start.date() < snapshot.monday + timedelta(days=7)
+               for span in schedule_ranges):
+            raise ConflictError("A proposed fixed schedule is no longer upcoming in this week")
+        if any(span.overlaps(item.time) for span in schedule_ranges for item in existing):
+            raise ConflictError("A proposed fixed schedule conflicts with a saved plan")
+        existing_schedules = repository.list(db.schedules)
+        for item in review.schedules:
+            if any(row["title"] == item.title and row["start_datetime"] == item.start_datetime
+                   and row["end_datetime"] == item.end_datetime for row in existing_schedules):
+                raise ConflictError("This fixed schedule already exists")
         proposed = []
         for item in review.blocks + [change.after for change in review.changes if change.after]:
             task_ids.add(item.task_id)
@@ -173,14 +228,14 @@ class ActionService:
             proposed.append(PlanBlock(item.task_id, TimeRange(item.start_datetime, item.end_datetime)))
         try:
             validate_plan(proposed, snapshot.tasks, snapshot.monday, snapshot.current_time(),
-                          snapshot.preferences, snapshot.fixed_ranges(), existing)
+                          snapshot.preferences, snapshot.fixed_ranges() + schedule_ranges, existing)
         except ValueError:
             raise ConflictError("The proposal no longer fits current constraints; request a new proposal") from None
         return task_ids
 
     def propose(self, value):
         review = Review.model_validate(value)
-        if not review.blocks and not review.changes:
+        if not review.blocks and not review.changes and not review.schedules:
             return {**review.model_dump(mode="json"), "action_id": None}
         with self.database.transaction(write=True) as repository:
             task_ids = self._validate(repository, review)
@@ -213,22 +268,44 @@ class ActionService:
                 "status": "REJECTED", "updated_at": self.service.current_time()})
             return self._response(row)
 
-    def approve(self, identifier):
+    @staticmethod
+    def _selection(review, selection):
+        if selection is None or all(value is None for value in (
+                selection.block_indexes, selection.change_indexes, selection.schedule_indexes)):
+            return review
+
+        def selected(items, indexes):
+            indexes = indexes or []
+            if any(index >= len(items) for index in indexes):
+                raise ConflictError("A selected proposal item does not exist")
+            return [items[index] for index in indexes]
+
+        result = review.model_copy(update={
+            "blocks": selected(review.blocks, selection.block_indexes),
+            "changes": selected(review.changes, selection.change_indexes),
+            "schedules": selected(review.schedules, selection.schedule_indexes),
+        })
+        if not result.blocks and not result.changes and not result.schedules:
+            raise ConflictError("Select at least one proposal item")
+        return result
+
+    def approve(self, identifier, selection=None):
         with self.database.transaction(write=True) as repository:
             row = repository.get(db.pending_actions, identifier)
             if row["status"] == "EXECUTED":
                 return self._response(row)
             if row["status"] != "PENDING":
                 raise ConflictError("Only pending actions can be approved")
-            review = Review.model_validate(row["payload"])
-            for task_id, expected in row["baseline"].items():
+            review = self._selection(Review.model_validate(row["payload"]), selection)
+            task_ids = self._validate(repository, review)
+            for task_id in task_ids:
+                expected = row["baseline"][str(task_id)]
                 try:
-                    current = json_row(repository.get(db.tasks, int(task_id)))
+                    current = json_row(repository.get(db.tasks, task_id))
                 except NotFoundError:
                     raise ConflictError("A referenced task was removed; request a new proposal") from None
                 if current != expected:
                     raise ConflictError("A referenced task changed; request a new proposal")
-            task_ids = self._validate(repository, review)
             now = self.service.current_time()
             repository.update(db.pending_actions, identifier, {"status": "APPROVED", "approved_at": now})
             result = ExecutionResult()
@@ -246,6 +323,9 @@ class ActionService:
                     values.update(status="PLANNED", source="AGENT", updated_at=now)
                     repository.update(db.plans, change.plan_id, values)
                     result.updated_plan_ids.append(change.plan_id)
+            for item in review.schedules:
+                saved = repository.insert(db.schedules, item.model_dump())
+                result.created_schedule_ids.append(saved["id"])
             for task_id in task_ids:
                 self.service._refresh_task_status(repository, task_id)
             row = repository.update(db.pending_actions, identifier, {

@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
@@ -15,9 +15,10 @@ export function ScheduleDialog({ schedule, trigger, onSaved }: { schedule?: Fixe
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<ScheduleDraft>(emptySchedule)
-  useEffect(() => {
-    if (open) setDraft(schedule ? { title: schedule.title, description: schedule.description, start_datetime: toDatetimeLocal(schedule.start_datetime), end_datetime: toDatetimeLocal(schedule.end_datetime), fixed: true } : emptySchedule)
-  }, [open, schedule])
+  function changeOpen(nextOpen: boolean) {
+    if (nextOpen) setDraft(schedule ? { title: schedule.title, description: schedule.description, start_datetime: toDatetimeLocal(schedule.start_datetime), end_datetime: toDatetimeLocal(schedule.end_datetime), fixed: true } : emptySchedule)
+    setOpen(nextOpen)
+  }
   async function save(event: FormEvent) {
     event.preventDefault(); setSaving(true)
     try {
@@ -28,7 +29,7 @@ export function ScheduleDialog({ schedule, trigger, onSaved }: { schedule?: Fixe
     } catch (error) { toast.error(error instanceof Error ? error.message : "저장하지 못했습니다.") }
     finally { setSaving(false) }
   }
-  return <Dialog open={open} onOpenChange={setOpen}>
+  return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger asChild>{trigger}</DialogTrigger>
     <DialogContent className="rounded-2xl sm:max-w-xl"><DialogHeader><DialogTitle>{schedule ? "고정 일정 수정" : "고정 일정 추가"}</DialogTitle><DialogDescription>플래너가 이동하거나 겹쳐 배치하면 안 되는 시간을 등록합니다.</DialogDescription></DialogHeader>
       <form onSubmit={save} className="grid gap-4">

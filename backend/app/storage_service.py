@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta
 
 from app import database as db
 from app.errors import ConflictError
-from app.inputs import ManualPlanInput, ScheduleInput
+from app.inputs import BodySettingsInput, ManualPlanInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
 from app.models import Proposal, Task
 from app.planning import KST, PlanBlock, Preferences, TimeRange, aware, daily_minutes, validate_plan
 from app.services import PlanningSnapshot
@@ -18,6 +18,18 @@ def block(row):
     return PlanBlock(row["task_id"], TimeRange(row["start_datetime"], row["end_datetime"]))
 
 
+def today_completion_target(title):
+    compact = "".join(title.split())
+    return 4 if "물" in compact and "마시" in compact else 1
+
+
+def today_json_row(row):
+    value = json_row(row)
+    if value.get("task_id") is not None:
+        value["source"] = "TASK"
+    return value
+
+
 class DatabasePlanningService:
     persistent = True
 
@@ -27,6 +39,8 @@ class DatabasePlanningService:
         with database.transaction(write=True) as repository:
             if not repository.list(db.preferences):
                 repository.insert(db.preferences, {"id": 1, **Preferences().model_dump()})
+            if not repository.list(db.body_settings):
+                repository.insert(db.body_settings, {"id": 1, "height_cm": 176.0})
 
     def current_time(self):
         return self._now if self._now is not None else datetime.now(KST)
@@ -81,8 +95,20 @@ class DatabasePlanningService:
             if linked and any(task.model_dump()[key] != old[key] for key in
                               ("estimated_minutes", "due_date", "weekly_target_count")):
                 raise ConflictError("Edit linked plans before changing duration, deadline or target")
-            return Task.model_validate(repository.update(
+            updated = Task.model_validate(repository.update(
                 db.tasks, identifier, task.model_dump(exclude={"id"})))
+            if "status" in changes:
+                for item in repository.list(
+                        db.today_items,
+                        db.today_items.c.task_id == identifier,
+                        db.today_items.c.item_date == self.current_time().date()):
+                    completed = updated.status == "COMPLETED"
+                    repository.update(db.today_items, item["id"], {
+                        "status": "COMPLETED" if completed else "TODO",
+                        "completion_count": item["completion_target"] if completed else 0,
+                        "updated_at": self.current_time(),
+                    })
+            return updated
 
     def delete_task(self, identifier):
         with self.database.transaction(write=True) as repository:
@@ -110,9 +136,292 @@ class DatabasePlanningService:
                    repository.update(db.schedules, identifier, value.model_dump()))
             return json_row(row)
 
+    def set_schedule_completed(self, identifier, completed):
+        with self.database.transaction(write=True) as repository:
+            row = repository.update(db.schedules, identifier, {"completed": bool(completed)})
+            return json_row(row)
+
     def delete_schedule(self, identifier):
         with self.database.transaction(write=True) as repository:
             repository.delete(db.schedules, identifier)
+
+    def list_recurring_tasks(self):
+        with self.database.transaction() as repository:
+            return [json_row(row) for row in repository.list(db.recurring_tasks)]
+
+    def save_recurring_task(self, value: RecurringTaskInput, identifier=None):
+        value = RecurringTaskInput.model_validate(value.model_dump())
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            old = repository.get(db.recurring_tasks, identifier) if identifier is not None else None
+            values = {
+                **value.model_dump(),
+                "start_date": value.start_date or now.date(),
+                "created_at": old["created_at"] if old else now,
+                "updated_at": now,
+            }
+            row = (repository.insert(db.recurring_tasks, values) if old is None else
+                   repository.update(db.recurring_tasks, identifier, values))
+            return json_row(row)
+
+    def delete_recurring_task(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            repository.delete(db.recurring_tasks, identifier)
+
+    def _materialize_today_items(self, repository, item_date):
+        now = self.current_time()
+        next_order = self._next_today_order(repository, item_date)
+        existing = {
+            row["recurrence_id"] for row in repository.list(
+                db.today_items, db.today_items.c.item_date == item_date,
+                db.today_items.c.recurrence_id.is_not(None)
+            )
+        }
+        for rule in repository.list(db.recurring_tasks, db.recurring_tasks.c.active.is_(True)):
+            due = item_date >= rule["start_date"] and (
+                rule["cadence"] == "DAILY" or item_date.weekday() in rule["weekdays"]
+            )
+            if due and rule["id"] not in existing:
+                repository.insert(db.today_items, {
+                    "title": rule["title"],
+                    "item_date": item_date,
+                    "status": "TODO",
+                    "source": "RECURRING",
+                    "recurrence_id": rule["id"],
+                    "task_id": None,
+                    "completion_count": 0,
+                    "completion_target": today_completion_target(rule["title"]),
+                    "order_index": next_order,
+                    "created_at": now,
+                    "updated_at": now,
+                })
+                next_order += 1
+        if item_date.weekday() == 6:
+            prompts = repository.list(
+                db.today_items,
+                db.today_items.c.item_date == item_date,
+                db.today_items.c.source == "RECURRING",
+                db.today_items.c.recurrence_id.is_(None),
+                db.today_items.c.title == "몸무게 기록",
+            )
+            if not prompts:
+                measured = repository.list(
+                    db.weight_records, db.weight_records.c.measured_on == item_date
+                )
+                completed = bool(measured)
+                repository.insert(db.today_items, {
+                    "title": "몸무게 기록",
+                    "item_date": item_date,
+                    "status": "COMPLETED" if completed else "TODO",
+                    "source": "RECURRING",
+                    "recurrence_id": None,
+                    "task_id": None,
+                    "completion_count": 1 if completed else 0,
+                    "completion_target": 1,
+                    "order_index": next_order,
+                    "created_at": now,
+                    "updated_at": now,
+                })
+
+    @staticmethod
+    def _next_today_order(repository, item_date):
+        rows = repository.list(db.today_items, db.today_items.c.item_date == item_date)
+        return max((row["order_index"] for row in rows), default=0) + 1
+
+    def list_today_items(self):
+        item_date = self.current_time().date()
+        with self.database.transaction(write=True) as repository:
+            self._materialize_today_items(repository, item_date)
+            rows = repository.list(db.today_items, db.today_items.c.item_date == item_date)
+            normalized = []
+            for row in rows:
+                target = today_completion_target(row["title"])
+                count = row["completion_count"]
+                if row["status"] == "COMPLETED" and count == 0:
+                    count = 1
+                status = "COMPLETED" if count >= target else "TODO"
+                if (target, count, status) != (
+                        row["completion_target"], row["completion_count"], row["status"]):
+                    row = repository.update(db.today_items, row["id"], {
+                        "completion_target": target,
+                        "completion_count": min(count, target),
+                        "status": status,
+                        "updated_at": self.current_time(),
+                    })
+                normalized.append(today_json_row(row))
+            return sorted(normalized, key=lambda item: (item["order_index"], item["id"]))
+
+    def list_week_today_items(self):
+        item_date = self.current_time().date()
+        week_start = item_date - timedelta(days=item_date.weekday())
+        week_end = week_start + timedelta(days=7)
+        with self.database.transaction(write=True) as repository:
+            self._materialize_today_items(repository, item_date)
+            rows = repository.list(
+                db.today_items,
+                db.today_items.c.item_date >= week_start,
+                db.today_items.c.item_date < week_end,
+            )
+            return [today_json_row(row) for row in sorted(
+                rows, key=lambda item: (item["item_date"], item["order_index"], item["id"])
+            )]
+
+    def create_today_item(self, value: TodayItemInput):
+        value = TodayItemInput.model_validate(value.model_dump())
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            row = repository.insert(db.today_items, {
+                "title": value.title,
+                "item_date": now.date(),
+                "status": "TODO",
+                "source": "MANUAL",
+                "recurrence_id": None,
+                "task_id": None,
+                "completion_count": 0,
+                "completion_target": today_completion_target(value.title),
+                "order_index": self._next_today_order(repository, now.date()),
+                "created_at": now,
+                "updated_at": now,
+            })
+            return json_row(row)
+
+    def create_today_item_from_task(self, identifier):
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            task = repository.get(db.tasks, identifier)
+            if task["status"] == "COMPLETED":
+                raise ConflictError("Completed task cannot be added to Today")
+            existing = repository.list(
+                db.today_items,
+                db.today_items.c.item_date == now.date(),
+                db.today_items.c.task_id == identifier,
+            )
+            if existing:
+                raise ConflictError("Task is already in Today")
+            return today_json_row(repository.insert(db.today_items, {
+                "title": task["title"],
+                "item_date": now.date(),
+                "status": "TODO",
+                # MANUAL remains storage-compatible with the first local-only schema;
+                # task_id makes the API representation a TASK item.
+                "source": "MANUAL",
+                "recurrence_id": None,
+                "task_id": identifier,
+                "completion_count": 0,
+                "completion_target": today_completion_target(task["title"]),
+                "order_index": self._next_today_order(repository, now.date()),
+                "created_at": now,
+                "updated_at": now,
+            }))
+
+    def reorder_today_items(self, ordered_ids):
+        item_date = self.current_time().date()
+        with self.database.transaction(write=True) as repository:
+            self._materialize_today_items(repository, item_date)
+            rows = repository.list(db.today_items, db.today_items.c.item_date == item_date)
+            current_ids = {row["id"] for row in rows}
+            if len(ordered_ids) != len(rows) or set(ordered_ids) != current_ids:
+                raise ConflictError("Reorder must include every current Today item exactly once")
+            now = self.current_time()
+            for order_index, identifier in enumerate(ordered_ids, start=1):
+                repository.update(db.today_items, identifier, {
+                    "order_index": order_index,
+                    "updated_at": now,
+                })
+            reordered = repository.list(db.today_items, db.today_items.c.item_date == item_date)
+            return [today_json_row(row) for row in sorted(
+                reordered, key=lambda item: (item["order_index"], item["id"])
+            )]
+
+    def update_today_item(self, identifier, status):
+        if status not in {"TODO", "COMPLETED"}:
+            raise ConflictError("Unsupported today item status")
+        with self.database.transaction(write=True) as repository:
+            item = repository.get(db.today_items, identifier)
+            if status == "COMPLETED":
+                count = min(item["completion_target"], item["completion_count"] + 1)
+                next_status = "COMPLETED" if count >= item["completion_target"] else "TODO"
+            else:
+                count = 0
+                next_status = "TODO"
+            now = self.current_time()
+            row = repository.update(db.today_items, identifier, {
+                "status": next_status,
+                "completion_count": count,
+                "updated_at": now,
+            })
+            if item["task_id"] is not None:
+                linked = repository.list(db.plans, db.plans.c.task_id == item["task_id"])
+                task_status = ("COMPLETED" if next_status == "COMPLETED" else
+                               "PLANNED" if any(plan["status"] == "PLANNED" for plan in linked) else "TODO")
+                repository.update(db.tasks, item["task_id"], {
+                    "status": task_status,
+                    "updated_at": now,
+                })
+            return today_json_row(row)
+
+    def delete_today_item(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            repository.delete(db.today_items, identifier)
+
+    def get_body_settings(self):
+        with self.database.transaction() as repository:
+            row = repository.get(db.body_settings, 1)
+            return {"height_cm": row["height_cm"]}
+
+    def save_body_settings(self, value: BodySettingsInput):
+        value = BodySettingsInput.model_validate(value.model_dump())
+        with self.database.transaction(write=True) as repository:
+            row = repository.update(db.body_settings, 1, value.model_dump())
+            return {"height_cm": row["height_cm"]}
+
+    def list_weight_records(self):
+        with self.database.transaction() as repository:
+            return [json_row(row) for row in sorted(
+                repository.list(db.weight_records), key=lambda item: item["measured_on"]
+            )]
+
+    def save_weight_record(self, value: WeightRecordInput):
+        value = WeightRecordInput.model_validate(value.model_dump())
+        now = self.current_time()
+        measured_on = value.measured_on or now.date()
+        with self.database.transaction(write=True) as repository:
+            existing = repository.list(
+                db.weight_records, db.weight_records.c.measured_on == measured_on
+            )
+            values = {
+                "measured_on": measured_on,
+                "weight_kg": value.weight_kg,
+                "created_at": existing[0]["created_at"] if existing else now,
+                "updated_at": now,
+            }
+            row = (repository.update(db.weight_records, existing[0]["id"], values)
+                   if existing else repository.insert(db.weight_records, values))
+            for prompt in repository.list(
+                    db.today_items,
+                    db.today_items.c.item_date == measured_on,
+                    db.today_items.c.source == "RECURRING",
+                    db.today_items.c.recurrence_id.is_(None),
+                    db.today_items.c.title == "몸무게 기록"):
+                repository.update(db.today_items, prompt["id"], {
+                    "status": "COMPLETED", "completion_count": 1, "updated_at": now,
+                })
+            return json_row(row)
+
+    def delete_weight_record(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            row = repository.get(db.weight_records, identifier)
+            repository.delete(db.weight_records, identifier)
+            for prompt in repository.list(
+                    db.today_items,
+                    db.today_items.c.item_date == row["measured_on"],
+                    db.today_items.c.source == "RECURRING",
+                    db.today_items.c.recurrence_id.is_(None),
+                    db.today_items.c.title == "몸무게 기록"):
+                repository.update(db.today_items, prompt["id"], {
+                    "status": "TODO", "completion_count": 0,
+                    "updated_at": self.current_time(),
+                })
 
     def get_preferences(self):
         with self.database.transaction() as repository:
@@ -211,8 +520,13 @@ class DatabasePlanningService:
             self._refresh_task_status(repository, old["task_id"])
 
     def complete_plan(self, identifier):
+        return self.set_plan_status(identifier, "COMPLETED")
+
+    def set_plan_status(self, identifier, status):
+        if status not in {"PLANNED", "COMPLETED"}:
+            raise ValueError("Plan status must be PLANNED or COMPLETED")
         with self.database.transaction(write=True) as repository:
             row = repository.update(db.plans, identifier, {
-                "status": "COMPLETED", "updated_at": self.current_time()})
+                "status": status, "updated_at": self.current_time()})
             self._refresh_task_status(repository, row["task_id"])
             return json_row(row)

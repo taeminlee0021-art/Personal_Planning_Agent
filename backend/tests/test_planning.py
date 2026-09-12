@@ -84,8 +84,8 @@ def test_weekly_target_protection(service):
             {"task_id": 1, "slot_id": "2026-09-08T19:00:00+09:00"}, {"task_id": 1, "slot_id": "2026-09-09T19:00:00+09:00"}]))
 
 
-def response(output=(), text=""):
-    return SimpleNamespace(status="completed", output=list(output), output_text=text, usage=None)
+def response(output=(), text="", status="completed"):
+    return SimpleNamespace(status=status, output=list(output), output_text=text, usage=None)
 
 
 def test_agent_calls_tools_then_returns_validated_proposal(service):
@@ -107,11 +107,65 @@ def test_agent_calls_tools_then_returns_validated_proposal(service):
     assert args["store"] is False
 
 
+def test_agent_offers_only_unread_tools_on_later_rounds(service):
+    client = Mock()
+    client.responses.create.side_effect = [
+        response([SimpleNamespace(type="function_call", name="get_tasks", arguments="{}", call_id="1")]),
+        response([SimpleNamespace(type="function_call", name=name, arguments="{}", call_id=str(index))
+                  for index, name in enumerate(NAMES[1:], start=2)]),
+        response(text='{"explanation":"Done","assignments":[]}'),
+    ]
+    PlanningAgent(client, "test", service).run("Plan")
+    second_tools = client.responses.create.call_args_list[1].kwargs["tools"]
+    assert [tool["name"] for tool in second_tools] == list(NAMES[1:])
+
+
 def test_agent_cannot_skip_required_reads(service):
     client = Mock()
     client.responses.create.return_value = response(text='{"explanation":"Example","assignments":[]}')
     with pytest.raises(ValueError, match="required data"):
         PlanningAgent(client, "test", service).run("Plan")
+
+
+def test_agent_retries_one_invalid_model_proposal(service):
+    calls = [SimpleNamespace(type="function_call", name=name, arguments="{}", call_id=str(i))
+             for i, name in enumerate(NAMES)]
+    client = Mock()
+    client.responses.create.side_effect = [
+        response(calls),
+        response(text='{"explanation":"Bad","assignments":[{"task_id":1,"slot_id":"invented"}]}'),
+        response(text='{"explanation":"Fixed","assignments":[{"task_id":1,"slot_id":"2026-09-08T19:00:00+09:00"}]}'),
+    ]
+    result = PlanningAgent(client, "test", service).run("Plan")
+    assert result["explanation"] == "Fixed"
+    assert client.responses.create.call_count == 3
+
+
+def test_agent_reports_safe_reason_after_two_invalid_proposals(service):
+    calls = [SimpleNamespace(type="function_call", name=name, arguments="{}", call_id=str(i))
+             for i, name in enumerate(NAMES)]
+    client = Mock()
+    client.responses.create.side_effect = [
+        response(calls),
+        response(text='{"explanation":"Bad","assignments":[{"task_id":1,"slot_id":"invented"}]}'),
+        response(text='{"explanation":"Still bad","assignments":[{"task_id":1,"slot_id":"invented"}]}'),
+    ]
+    with pytest.raises(ValueError, match="deterministic validation") as caught:
+        PlanningAgent(client, "test", service).run("Plan")
+    assert caught.value.code == "agent_invalid_proposal"
+
+
+def test_agent_retries_one_incomplete_response(service):
+    calls = [SimpleNamespace(type="function_call", name=name, arguments="{}", call_id=str(i))
+             for i, name in enumerate(NAMES)]
+    client = Mock()
+    client.responses.create.side_effect = [
+        response(status="incomplete"), response(calls),
+        response(text='{"explanation":"Fixed","assignments":[]}'),
+    ]
+    result = PlanningAgent(client, "test", service).run("Plan")
+    assert result["explanation"] == "Fixed"
+    assert client.responses.create.call_count == 3
 
 
 def test_agent_round_limit(service):

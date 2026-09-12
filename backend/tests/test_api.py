@@ -114,10 +114,130 @@ def test_schedule_crud_and_timezone_normalization(client):
     assert response.status_code == 201
     row = response.json()
     assert row["start_datetime"] == START.isoformat()
+    assert row["completed"] is False
     assert len(client.get("/api/schedules").json()) == 1
     changed = client.put(f"/api/schedules/{row['id']}", json=event(title="Changed"))
     assert changed.status_code == 200 and changed.json()["title"] == "Changed"
+    completed = client.put(f"/api/schedules/{row['id']}/status", json={"completed": True})
+    assert completed.status_code == 200 and completed.json()["completed"] is True
+    reopened = client.put(f"/api/schedules/{row['id']}/status", json={"completed": False})
+    assert reopened.status_code == 200 and reopened.json()["completed"] is False
     assert client.delete(f"/api/schedules/{row['id']}").status_code == 204
+
+
+def test_recurring_settings_and_today_quick_items(client):
+    daily = client.post("/api/recurring-tasks", json={
+        "title": "물 마시기", "cadence": "DAILY"
+    })
+    assert daily.status_code == 201
+    assert daily.json()["start_date"] == NOW.date().isoformat()
+    weekly = client.post("/api/recurring-tasks", json={
+        "title": "주간 정리", "cadence": "WEEKLY", "weekdays": [0, 3]
+    })
+    assert weekly.status_code == 201
+    assert len(client.get("/api/recurring-tasks").json()) == 2
+
+    generated = client.get("/api/today-items").json()
+    assert [item["title"] for item in generated] == ["물 마시기", "주간 정리"]
+    assert client.get("/api/today-items").json() == generated
+
+    manual = client.post("/api/today-items", json={"title": "우유 사기"})
+    assert manual.status_code == 201 and manual.json()["source"] == "MANUAL"
+    item_id = manual.json()["id"]
+    completed = client.put(f"/api/today-items/{item_id}", json={"status": "COMPLETED"})
+    assert completed.status_code == 200 and completed.json()["status"] == "COMPLETED"
+    assert client.delete(f"/api/today-items/{item_id}").status_code == 204
+
+    changed = client.put(f"/api/recurring-tasks/{weekly.json()['id']}", json={
+        "title": "금요일 정리", "cadence": "WEEKLY", "weekdays": [4], "active": False
+    })
+    assert changed.status_code == 200 and changed.json()["active"] is False
+    assert client.delete(f"/api/recurring-tasks/{daily.json()['id']}").status_code == 204
+
+
+def test_future_recurring_start_date_is_saved_and_not_materialized_early(client):
+    start_date = (NOW.date() + timedelta(days=2)).isoformat()
+    response = client.post("/api/recurring-tasks", json={
+        "title": "수요일부터 시작", "cadence": "DAILY", "start_date": start_date,
+    })
+    assert response.status_code == 201
+    assert response.json()["start_date"] == start_date
+    assert client.get("/api/today-items").json() == []
+
+    client.app.state.service._now = NOW + timedelta(days=2)
+    assert [item["title"] for item in client.get("/api/today-items").json()] == ["수요일부터 시작"]
+
+
+def test_today_items_can_be_reordered_only_as_a_complete_unique_list(client):
+    ids = [client.post("/api/today-items", json={"title": title}).json()["id"]
+           for title in ("첫째", "둘째", "셋째")]
+    response = client.post("/api/today-items/reorder", json={"ordered_ids": ids[::-1]})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == ids[::-1]
+    assert [item["id"] for item in client.get("/api/today-items").json()] == ids[::-1]
+
+    assert client.post("/api/today-items/reorder", json={"ordered_ids": ids[:2]}).status_code == 409
+    assert client.post("/api/today-items/reorder", json={"ordered_ids": [ids[0], ids[0], ids[2]]}).status_code == 422
+    assert [item["id"] for item in client.get("/api/today-items").json()] == ids[::-1]
+
+
+def test_week_today_items_returns_prior_day_history(client):
+    first = client.post("/api/today-items", json={"title": "월요일"}).json()
+    client.app.state.service._now = NOW + timedelta(days=1)
+    second = client.post("/api/today-items", json={"title": "화요일"}).json()
+    response = client.get("/api/today-items/week")
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [first["id"], second["id"]]
+    assert [item["title"] for item in client.get("/api/today-items").json()] == ["화요일"]
+
+def test_water_progress_and_add_saved_task_to_today(client):
+    saved_task = task(client, title="냉장고 청소하기")
+    added = client.post(f"/api/today-items/from-task/{saved_task['id']}", json={})
+    assert added.status_code == 201
+    assert added.json()["source"] == "TASK"
+    assert added.json()["task_id"] == saved_task["id"]
+    assert client.post(f"/api/today-items/from-task/{saved_task['id']}", json={}).status_code == 409
+
+    item_id = added.json()["id"]
+    completed = client.put(f"/api/today-items/{item_id}", json={"status": "COMPLETED"})
+    assert completed.json()["status"] == "COMPLETED"
+    assert client.get(f"/api/tasks/{saved_task['id']}").json()["status"] == "COMPLETED"
+
+    client.put(f"/api/today-items/{item_id}", json={"status": "TODO"})
+    assert client.get(f"/api/tasks/{saved_task['id']}").json()["status"] == "TODO"
+
+    client.post("/api/recurring-tasks", json={"title": "물마시기", "cadence": "DAILY"})
+    water = next(item for item in client.get("/api/today-items").json()
+                 if item["title"] == "물마시기")
+    for expected in range(1, 5):
+        response = client.put(
+            f"/api/today-items/{water['id']}", json={"status": "COMPLETED"}
+        )
+        assert response.status_code == 200
+        assert response.json()["completion_count"] == expected
+        assert response.json()["status"] == ("COMPLETED" if expected == 4 else "TODO")
+
+
+@pytest.mark.parametrize("body", [
+    {"title": "", "cadence": "DAILY"},
+    {"title": "Bad", "cadence": "WEEKLY", "weekdays": []},
+    {"title": "Bad", "cadence": "DAILY", "weekdays": [0]},
+    {"title": "Bad", "cadence": "WEEKLY", "weekdays": [7]},
+    {"title": "Bad", "cadence": "MONTHLY"},
+    {"title": "Bad", "cadence": "DAILY", "api_key": SECRET},
+])
+def test_invalid_recurring_settings_do_not_write(client, body):
+    response = client.post("/api/recurring-tasks", json=body)
+    assert response.status_code == 422
+    assert SECRET not in response.text
+    assert client.get("/api/recurring-tasks").json() == []
+
+
+@pytest.mark.parametrize("body", [{}, {"title": ""}, {"title": "x" * 121}, {"title": "x", "date": "2026-09-08"}])
+def test_invalid_today_quick_item_does_not_write(client, body):
+    response = client.post("/api/today-items", json=body)
+    assert response.status_code == 422
+    assert client.get("/api/today-items").json() == []
 
 
 @pytest.mark.parametrize("change", [
@@ -129,6 +249,43 @@ def test_invalid_schedule(client, change):
     response = client.post("/api/schedules", json=event(**change))
     assert response.status_code == 422
     assert client.get("/api/schedules").json() == []
+
+
+def test_schedule_status_validation_and_missing_schedule(client):
+    assert client.put("/api/schedules/1/status", json={"completed": "yes"}).status_code == 422
+    assert client.put("/api/schedules/999/status", json={"completed": True}).status_code == 404
+
+
+def test_body_settings_and_weight_records(client):
+    assert client.get("/api/body/settings").json() == {"height_cm": 176.0}
+    changed = client.put("/api/body/settings", json={"height_cm": 175.5})
+    assert changed.status_code == 200 and changed.json() == {"height_cm": 175.5}
+
+    created = client.post("/api/body/weights", json={
+        "measured_on": NOW.date().isoformat(), "weight_kg": 72.4,
+    })
+    assert created.status_code == 201
+    row = created.json()
+    assert row["weight_kg"] == 72.4
+    assert client.get("/api/body/weights").json() == [row]
+
+    updated = client.post("/api/body/weights", json={
+        "measured_on": NOW.date().isoformat(), "weight_kg": 71.9,
+    })
+    assert updated.status_code == 201 and updated.json()["id"] == row["id"]
+    assert len(client.get("/api/body/weights").json()) == 1
+    assert client.delete(f"/api/body/weights/{row['id']}").status_code == 204
+    assert client.get("/api/body/weights").json() == []
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/body/settings", {"height_cm": 20}),
+    ("/api/body/weights", {"weight_kg": 0}),
+    ("/api/body/weights", {"weight_kg": "heavy"}),
+])
+def test_body_input_validation(client, path, body):
+    method = client.put if path.endswith("settings") else client.post
+    assert method(path, json=body).status_code == 422
 
 
 def test_preferences_validation_and_replacement(client):
@@ -172,6 +329,28 @@ def test_plan_queries_use_korean_day_and_week(client):
     assert client.post("/api/plans", json={}).status_code == 405
 
 
+def test_plan_status_can_be_completed_and_reopened(client):
+    row = task(client)
+    plan = client.app.state.service.save_manual_plan(
+        ManualPlanInput(task_id=row["id"], start_datetime=START)
+    )
+
+    completed = client.put(f"/api/plans/{plan['id']}/status", json={"status": "COMPLETED"})
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "COMPLETED"
+    assert client.get("/api/plans/today").json()[0]["status"] == "COMPLETED"
+
+    reopened = client.put(f"/api/plans/{plan['id']}/status", json={"status": "PLANNED"})
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "PLANNED"
+    assert client.get("/api/plans/today").json()[0]["status"] == "PLANNED"
+
+
+def test_plan_status_rejects_invalid_value_and_missing_plan(client):
+    assert client.put("/api/plans/1/status", json={"status": "DONE"}).status_code == 422
+    assert client.put("/api/plans/999/status", json={"status": "COMPLETED"}).status_code == 404
+
+
 def test_api_restart_persistence_and_lifecycle(tmp_path):
     path = tmp_path / "restart.db"
     app = create_app(path, now=NOW)
@@ -212,6 +391,34 @@ def test_agent_endpoint_uses_real_tool_loop_without_writes(client, monkeypatch):
     assert client.get("/api/agent/actions").json()[0]["id"] == response.json()["action_id"]
 
 
+def test_agent_schedule_proposal_and_selected_approval_api(client):
+    first = task(client)
+    second = task(client, title="Study")
+    client.app.state.agent_runner = lambda service, message: service.render_proposal(Proposal(
+        explanation="결혼식과 두 계획", assignments=[
+            {"task_id": first["id"], "slot_id": START.isoformat()},
+            {"task_id": second["id"], "slot_id": (START + timedelta(hours=1)).isoformat()},
+        ], schedules=[{
+            "title": "동료 결혼식",
+            "start_datetime": (START + timedelta(days=5, hours=-2)).isoformat(),
+            "end_datetime": (START + timedelta(days=5)).isoformat(),
+            "description": "종료 시각 미입력으로 2시간 가정", "fixed": True,
+        }]))
+    proposed = client.post("/api/agent/messages", json={"message": "계획해 줘"})
+    assert proposed.status_code == 200, proposed.text
+    body = proposed.json()
+    assert body["schedules"][0]["title"] == "동료 결혼식"
+    assert client.get("/api/schedules").json() == []
+
+    approved = client.post(f"/api/agent/actions/{body['action_id']}/approve", json={
+        "block_indexes": [1], "change_indexes": [], "schedule_indexes": [0],
+    })
+    assert approved.status_code == 200, approved.text
+    assert len(client.get("/api/plans").json()) == 1
+    assert client.get("/api/plans").json()[0]["task_id"] == second["id"]
+    assert client.get("/api/schedules").json()[0]["title"] == "동료 결혼식"
+
+
 @pytest.mark.parametrize("body", [{"message": ""}, {"message": "   "}, {"message": "x" * 4001},
                                    {"message": "Plan", "api_key": SECRET}])
 def test_invalid_agent_message_no_invocation(client, body):
@@ -236,6 +443,7 @@ def test_upstream_error_is_sanitized(client, monkeypatch, caplog):
         message=SECRET, request=httpx.Request("POST", "https://api.openai.com/v1/responses"))))
     response = client.post("/api/agent/messages", json={"message": "Plan"})
     assert response.status_code == 502
+    assert response.json()["error"]["code"] == "agent_connection_failed"
     assert SECRET not in response.text + caplog.text
 
 
@@ -249,6 +457,7 @@ def test_malformed_agent_result_cannot_leak(client, monkeypatch, caplog):
     monkeypatch.setattr("app.main.PlanningAgent", Mock(return_value=Mock(run=Mock(side_effect=ValueError(SECRET)))))
     response = client.post("/api/agent/messages", json={"message": "Plan"})
     assert response.status_code == 502
+    assert response.json()["error"]["code"] == "agent_internal_validation"
     assert SECRET not in response.text + caplog.text
 
 
