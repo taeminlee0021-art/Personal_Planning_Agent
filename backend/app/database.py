@@ -172,6 +172,57 @@ weight_records = Table(
 )
 
 
+meal_entries = Table(
+    "meal_entries", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("eaten_on", Date, nullable=False, index=True),
+    Column("meal_type", String(10), nullable=False),
+    Column("food_name", String(200), nullable=False),
+    Column("calories_kcal", Float),
+    Column("protein_g", Float),
+    Column("nutrition_source", String(10), nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    CheckConstraint("meal_type IN ('BREAKFAST', 'LUNCH', 'DINNER', 'SNACK')"),
+    CheckConstraint("nutrition_source IN ('UNKNOWN', 'MANUAL', 'MEMORY', 'GPT', 'MIXED')"),
+    CheckConstraint("calories_kcal IS NULL OR (calories_kcal >= 0 AND calories_kcal <= 5000)"),
+    CheckConstraint("protein_g IS NULL OR (protein_g >= 0 AND protein_g <= 500)"),
+    sqlite_autoincrement=True,
+)
+
+food_nutrition = Table(
+    "food_nutrition", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("normalized_name", String(200), nullable=False, unique=True, index=True),
+    Column("display_name", String(200), nullable=False),
+    Column("calories_kcal", Float, nullable=False),
+    Column("protein_g", Float, nullable=False),
+    Column("source", String(10), nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    CheckConstraint("source IN ('MANUAL', 'GPT', 'MIXED')"),
+    CheckConstraint("calories_kcal >= 0 AND calories_kcal <= 5000"),
+    CheckConstraint("protein_g >= 0 AND protein_g <= 500"),
+    sqlite_autoincrement=True,
+)
+
+diet_reviews = Table(
+    "diet_reviews", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("week_start", Date, nullable=False, unique=True, index=True),
+    Column("summary", String(2000), nullable=False),
+    Column("good_points", JSON, nullable=False),
+    Column("avoid_foods", JSON, nullable=False),
+    Column("limit_foods", JSON, nullable=False),
+    Column("total_calories_kcal", Float, nullable=False),
+    Column("average_daily_calories_kcal", Float, nullable=False),
+    Column("total_protein_g", Float, nullable=False),
+    Column("average_daily_protein_g", Float, nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    sqlite_autoincrement=True,
+)
+
 class Database:
     def __init__(self, location: str | Path):
         raw_location = str(location)

@@ -1573,3 +1573,38 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   /api/health; local proxy smoke returned health 200 and page 200.
 - Deployment of this frontend-only update was explicitly requested; terminal
   Sites deployment status is verified outside this source record.
+## 2026-09-13 - Local health and weekly diet tracking
+
+- The user explicitly requested local development and review before any further
+  GitHub push, Render deployment or Sites upload. This feature set remains local.
+- Expanded the Weight navigation area into a responsive Health view with Diet and
+  Weight tabs. Meals are recorded by date and BREAKFAST/LUNCH/DINNER/SNACK, with
+  optional calories and protein. Records and summaries remain readable on mobile.
+- Added durable meal_entries, food_nutrition and diet_reviews tables. Complete
+  nutrition entered by the user is remembered by normalized food name; later
+  matching entries auto-fill it. GPT-resolved values are also remembered. Editing
+  or deleting a meal invalidates the stale weekly review.
+- Added one explicit weekly diet-analysis action. It batches only unresolved meal
+  nutrition with the current Monday-Sunday log, height and latest weight, then
+  requests a strict structured Korean weight-loss review. Results separate good
+  points, foods best avoided and foods recommended to reduce. Numeric totals and
+  averages are calculated deterministically in Python; the API key stays backend-only.
+- Sundays now materialize a protected `주간 식단 평가` Today prompt in addition to
+  `몸무게 기록`. Both open Health; saving the diet review or Sunday weight record
+  completes its matching prompt. A changed meal reopens the diet-review prompt.
+- BMI remains calculated deterministically. The current BMI card now applies the
+  Korean Society for the Study of Obesity adult bands: underweight below 18.5,
+  normal 18.5-22.9, pre-obesity 23-24.9, class 1 obesity 25-29.9, class 2 obesity
+  30-34.9 and class 3/high obesity from 35. The UI states this is not a diagnosis.
+- Verification: 205 backend tests passed with the existing two upstream Starlette
+  warnings. Frontend ESLint and the Vinext production build passed. The existing
+  non-blocking >500 kB client chunk warning remains because Recharts is bundled.
+## 2026-09-13 - Health feature deployment authorization
+
+- After reviewing the local Health UI, the user explicitly authorized publishing
+  this exact feature set to GitHub main, the existing Render backend service and
+  the existing owner-private Sites project. Preserve the existing audience.
+- Release verification immediately before publishing: 205 backend tests passed
+  with two upstream Starlette warnings; frontend ESLint and Vinext production
+  build passed with the existing non-blocking client chunk-size warning. HTTP
+  smoke checks returned 200 for the page, health and all new diet endpoints.

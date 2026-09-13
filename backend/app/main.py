@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException
 from app.agent import AgentExecutionError, PlanningAgent
 from app.api.routes import router
 from app.database import Database
+from app.diet import analyze_diet
 from app.errors import ConflictError, NotFoundError
 from app.storage_service import DatabasePlanningService
 
@@ -72,11 +73,34 @@ def run_agent(service, message):
         raise AgentFailed("agent_internal_validation", "플래너 내부 검증 중 오류가 발생했습니다.") from None
 
 
+def run_diet(payload):
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    model = os.getenv("OPENAI_MODEL", "").strip()
+    if not key or not model:
+        raise AgentUnavailable()
+    try:
+        with OpenAI(api_key=key, timeout=60, max_retries=0) as client:
+            return analyze_diet(client, model, payload)
+    except AuthenticationError:
+        raise AgentFailed("agent_authentication_failed", "OpenAI API 인증에 실패했습니다. 서버의 API 키를 확인해 주세요.") from None
+    except RateLimitError:
+        raise AgentFailed("agent_rate_limited", "OpenAI 요청 한도 또는 결제 한도에 도달했습니다. 잠시 후 사용량을 확인해 주세요.") from None
+    except APITimeoutError:
+        raise AgentFailed("agent_timeout", "OpenAI 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.") from None
+    except APIConnectionError:
+        raise AgentFailed("agent_connection_failed", "OpenAI 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.") from None
+    except BadRequestError:
+        raise AgentFailed("agent_request_rejected", "OpenAI가 식단 평가 요청 형식을 거절했습니다.") from None
+    except OpenAIError:
+        raise AgentFailed("agent_upstream_failed", "OpenAI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.") from None
+    except (ValueError, ValidationError):
+        raise AgentFailed("agent_internal_validation", "식단 평가 내부 검증 중 오류가 발생했습니다.") from None
+
 def error(status, code, message):
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
 
 
-def create_app(database_path=None, *, now=None, agent_runner=None):
+def create_app(database_path=None, *, now=None, agent_runner=None, diet_runner=None):
     @asynccontextmanager
     async def lifespan(app):
         load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -89,6 +113,7 @@ def create_app(database_path=None, *, now=None, agent_runner=None):
         try:
             app.state.service = DatabasePlanningService(database, now=now)
             app.state.agent_runner = agent_runner or run_agent
+            app.state.diet_runner = diet_runner or run_diet
             yield
         finally:
             database.close()

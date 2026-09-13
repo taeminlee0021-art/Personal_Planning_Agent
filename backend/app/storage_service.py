@@ -3,7 +3,8 @@ from datetime import datetime, time, timedelta
 
 from app import database as db
 from app.errors import ConflictError
-from app.inputs import BodySettingsInput, ManualPlanInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.diet import DietAnalysis
 from app.models import Proposal, Task
 from app.planning import KST, PlanBlock, Preferences, TimeRange, aware, daily_minutes, validate_plan
 from app.services import PlanningSnapshot
@@ -197,32 +198,35 @@ class DatabasePlanningService:
                 })
                 next_order += 1
         if item_date.weekday() == 6:
-            prompts = repository.list(
-                db.today_items,
-                db.today_items.c.item_date == item_date,
-                db.today_items.c.source == "RECURRING",
-                db.today_items.c.recurrence_id.is_(None),
-                db.today_items.c.title == "몸무게 기록",
+            prompt_specs = (
+                ("주간 식단 평가", bool(repository.list(
+                    db.diet_reviews, db.diet_reviews.c.week_start == item_date - timedelta(days=6)))),
+                ("몸무게 기록", bool(repository.list(
+                    db.weight_records, db.weight_records.c.measured_on == item_date))),
             )
-            if not prompts:
-                measured = repository.list(
-                    db.weight_records, db.weight_records.c.measured_on == item_date
+            for title, completed in prompt_specs:
+                prompts = repository.list(
+                    db.today_items,
+                    db.today_items.c.item_date == item_date,
+                    db.today_items.c.source == "RECURRING",
+                    db.today_items.c.recurrence_id.is_(None),
+                    db.today_items.c.title == title,
                 )
-                completed = bool(measured)
-                repository.insert(db.today_items, {
-                    "title": "몸무게 기록",
-                    "item_date": item_date,
-                    "status": "COMPLETED" if completed else "TODO",
-                    "source": "RECURRING",
-                    "recurrence_id": None,
-                    "task_id": None,
-                    "completion_count": 1 if completed else 0,
-                    "completion_target": 1,
-                    "order_index": next_order,
-                    "created_at": now,
-                    "updated_at": now,
-                })
-
+                if not prompts:
+                    repository.insert(db.today_items, {
+                        "title": title,
+                        "item_date": item_date,
+                        "status": "COMPLETED" if completed else "TODO",
+                        "source": "RECURRING",
+                        "recurrence_id": None,
+                        "task_id": None,
+                        "completion_count": 1 if completed else 0,
+                        "completion_target": 1,
+                        "order_index": next_order,
+                        "created_at": now,
+                        "updated_at": now,
+                    })
+                    next_order += 1
     @staticmethod
     def _next_today_order(repository, item_date):
         rows = repository.list(db.today_items, db.today_items.c.item_date == item_date)
@@ -423,6 +427,192 @@ class DatabasePlanningService:
                     "updated_at": self.current_time(),
                 })
 
+    @staticmethod
+    def _food_key(name):
+        return " ".join(name.casefold().split())
+
+    def _week_dates(self, target=None):
+        target = target or self.current_time().date()
+        start = target - timedelta(days=target.weekday())
+        return start, start + timedelta(days=7)
+
+    def _invalidate_diet_review(self, repository, eaten_on):
+        week_start, week_end = self._week_dates(eaten_on)
+        for review in repository.list(db.diet_reviews, db.diet_reviews.c.week_start == week_start):
+            repository.delete(db.diet_reviews, review["id"])
+        sunday = week_end - timedelta(days=1)
+        for prompt in repository.list(
+                db.today_items,
+                db.today_items.c.item_date == sunday,
+                db.today_items.c.title == "주간 식단 평가"):
+            repository.update(db.today_items, prompt["id"], {
+                "status": "TODO", "completion_count": 0, "updated_at": self.current_time(),
+            })
+
+    def list_meal_entries(self):
+        week_start, week_end = self._week_dates()
+        with self.database.transaction() as repository:
+            rows = repository.list(
+                db.meal_entries,
+                db.meal_entries.c.eaten_on >= week_start,
+                db.meal_entries.c.eaten_on < week_end,
+            )
+            return [json_row(row) for row in sorted(
+                rows, key=lambda item: (item["eaten_on"], item["meal_type"], item["id"])
+            )]
+
+    def list_food_nutrition(self):
+        with self.database.transaction() as repository:
+            return [json_row(row) for row in repository.list(db.food_nutrition)]
+
+    def save_meal_entry(self, value: MealEntryInput, identifier=None):
+        value = MealEntryInput.model_validate(value.model_dump())
+        now = self.current_time()
+        eaten_on = value.eaten_on or now.date()
+        with self.database.transaction(write=True) as repository:
+            old = repository.get(db.meal_entries, identifier) if identifier is not None else None
+            known = repository.list(
+                db.food_nutrition,
+                db.food_nutrition.c.normalized_name == self._food_key(value.food_name),
+            )
+            calories, protein = value.calories_kcal, value.protein_g
+            user_supplied = calories is not None or protein is not None
+            used_memory = False
+            if known:
+                if calories is None:
+                    calories, used_memory = known[0]["calories_kcal"], True
+                if protein is None:
+                    protein, used_memory = known[0]["protein_g"], True
+            if calories is None and protein is None:
+                source = "UNKNOWN"
+            elif calories is not None and protein is not None:
+                source = "MIXED" if user_supplied and used_memory else "MEMORY" if used_memory else "MANUAL"
+            else:
+                source = "MANUAL"
+            values = {
+                "eaten_on": eaten_on, "meal_type": value.meal_type,
+                "food_name": value.food_name, "calories_kcal": calories,
+                "protein_g": protein, "nutrition_source": source,
+                "created_at": old["created_at"] if old else now, "updated_at": now,
+            }
+            row = (repository.update(db.meal_entries, identifier, values) if old else
+                   repository.insert(db.meal_entries, values))
+            if not used_memory and calories is not None and protein is not None:
+                catalog_values = {
+                    "normalized_name": self._food_key(value.food_name),
+                    "display_name": value.food_name, "calories_kcal": calories,
+                    "protein_g": protein, "source": "MANUAL",
+                    "created_at": known[0]["created_at"] if known else now, "updated_at": now,
+                }
+                if known:
+                    repository.update(db.food_nutrition, known[0]["id"], catalog_values)
+                else:
+                    repository.insert(db.food_nutrition, catalog_values)
+            if old and old["eaten_on"] != eaten_on:
+                self._invalidate_diet_review(repository, old["eaten_on"])
+            self._invalidate_diet_review(repository, eaten_on)
+            return json_row(row)
+
+    def delete_meal_entry(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            row = repository.get(db.meal_entries, identifier)
+            repository.delete(db.meal_entries, identifier)
+            self._invalidate_diet_review(repository, row["eaten_on"])
+
+    def get_diet_review(self):
+        week_start, _ = self._week_dates()
+        with self.database.transaction() as repository:
+            rows = repository.list(db.diet_reviews, db.diet_reviews.c.week_start == week_start)
+            return json_row(rows[0]) if rows else None
+
+    def diet_analysis_payload(self):
+        week_start, week_end = self._week_dates()
+        with self.database.transaction() as repository:
+            meals = repository.list(
+                db.meal_entries,
+                db.meal_entries.c.eaten_on >= week_start,
+                db.meal_entries.c.eaten_on < week_end,
+            )
+            if not meals:
+                raise ConflictError("이번 주에 기록된 식사가 없습니다.")
+            weights = sorted(repository.list(db.weight_records, db.weight_records.c.measured_on < week_end),
+                             key=lambda item: item["measured_on"])
+            return {
+                "week_start": week_start.isoformat(),
+                "height_cm": repository.get(db.body_settings, 1)["height_cm"],
+                "latest_weight_kg": weights[-1]["weight_kg"] if weights else None,
+                "meals": [{
+                    "entry_id": row["id"], "date": row["eaten_on"].isoformat(),
+                    "meal_type": row["meal_type"], "food_name": row["food_name"],
+                    "calories_kcal": row["calories_kcal"], "protein_g": row["protein_g"],
+                    "needs_estimate": row["calories_kcal"] is None or row["protein_g"] is None,
+                } for row in meals],
+            }
+
+    def save_diet_analysis(self, analysis: DietAnalysis):
+        analysis = DietAnalysis.model_validate(analysis)
+        week_start, week_end = self._week_dates()
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            meals = repository.list(
+                db.meal_entries,
+                db.meal_entries.c.eaten_on >= week_start,
+                db.meal_entries.c.eaten_on < week_end,
+            )
+            unresolved = {row["id"] for row in meals
+                          if row["calories_kcal"] is None or row["protein_g"] is None}
+            supplied = {item.entry_id for item in analysis.nutrition_estimates}
+            if supplied != unresolved:
+                raise ConflictError("식단 기록이 변경되었습니다. 다시 평가해 주세요.")
+            estimates = {item.entry_id: item for item in analysis.nutrition_estimates}
+            resolved = []
+            for row in meals:
+                if row["id"] in estimates:
+                    estimate = estimates[row["id"]]
+                    calories = row["calories_kcal"] if row["calories_kcal"] is not None else estimate.calories_kcal
+                    protein = row["protein_g"] if row["protein_g"] is not None else estimate.protein_g
+                    source = "GPT" if row["calories_kcal"] is None and row["protein_g"] is None else "MIXED"
+                    row = repository.update(db.meal_entries, row["id"], {
+                        "calories_kcal": calories, "protein_g": protein,
+                        "nutrition_source": source, "updated_at": now,
+                    })
+                    known = repository.list(
+                        db.food_nutrition,
+                        db.food_nutrition.c.normalized_name == self._food_key(row["food_name"]),
+                    )
+                    catalog = {
+                        "normalized_name": self._food_key(row["food_name"]),
+                        "display_name": row["food_name"], "calories_kcal": calories,
+                        "protein_g": protein, "source": source,
+                        "created_at": known[0]["created_at"] if known else now, "updated_at": now,
+                    }
+                    if known:
+                        repository.update(db.food_nutrition, known[0]["id"], catalog)
+                    else:
+                        repository.insert(db.food_nutrition, catalog)
+                resolved.append(row)
+            total_calories = sum(row["calories_kcal"] or 0 for row in resolved)
+            total_protein = sum(row["protein_g"] or 0 for row in resolved)
+            existing = repository.list(db.diet_reviews, db.diet_reviews.c.week_start == week_start)
+            values = {
+                "week_start": week_start, "summary": analysis.summary,
+                "good_points": analysis.good_points, "avoid_foods": analysis.avoid_foods,
+                "limit_foods": analysis.limit_foods, "total_calories_kcal": total_calories,
+                "average_daily_calories_kcal": total_calories / 7,
+                "total_protein_g": total_protein,
+                "average_daily_protein_g": total_protein / 7,
+                "created_at": existing[0]["created_at"] if existing else now, "updated_at": now,
+            }
+            review = (repository.update(db.diet_reviews, existing[0]["id"], values)
+                      if existing else repository.insert(db.diet_reviews, values))
+            sunday = week_end - timedelta(days=1)
+            for prompt in repository.list(
+                    db.today_items, db.today_items.c.item_date == sunday,
+                    db.today_items.c.title == "주간 식단 평가"):
+                repository.update(db.today_items, prompt["id"], {
+                    "status": "COMPLETED", "completion_count": 1, "updated_at": now,
+                })
+            return json_row(review)
     def get_preferences(self):
         with self.database.transaction() as repository:
             pref = repository.get(db.preferences, 1)

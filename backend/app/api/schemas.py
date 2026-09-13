@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 from app.actions import Review
-from app.inputs import BodySettingsInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
 from app.models import Model, TaskFields
 from app.planning import Preferences
 
@@ -120,6 +120,39 @@ class WeightRecordResponse(WeightRecordInput):
     created_at: AwareDatetime
     updated_at: AwareDatetime
 
+
+class MealEntryResponse(MealEntryInput):
+    id: int
+    eaten_on: date
+    nutrition_source: Literal["UNKNOWN", "MANUAL", "MEMORY", "GPT", "MIXED"]
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class FoodNutritionResponse(Model):
+    id: int
+    normalized_name: str
+    display_name: str
+    calories_kcal: float
+    protein_g: float
+    source: Literal["MANUAL", "GPT", "MIXED"]
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class DietReviewResponse(Model):
+    id: int
+    week_start: date
+    summary: str
+    good_points: list[str]
+    avoid_foods: list[str]
+    limit_foods: list[str]
+    total_calories_kcal: float
+    average_daily_calories_kcal: float
+    total_protein_g: float
+    average_daily_protein_g: float
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
 
 class ErrorBody(Model):
     code: str

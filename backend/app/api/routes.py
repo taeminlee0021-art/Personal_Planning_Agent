@@ -3,12 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Request, Response, Body
 
 from app.api.schemas import (
-    AgentMessage, AgentResponse, BodySettingsResponse, EmptyDecision, ErrorResponse, PlanResponse, PlanStatusUpdate, PreferencesResponse,
+    AgentMessage, AgentResponse, BodySettingsResponse, DietReviewResponse, EmptyDecision, ErrorResponse, FoodNutritionResponse, MealEntryResponse, PlanResponse, PlanStatusUpdate, PreferencesResponse,
     RecurringTaskResponse, ScheduleResponse, ScheduleStatusUpdate, TaskCreate, TaskUpdate, TodayItemResponse,
     TodayItemsReorder, TodayItemUpdate, WeightRecordResponse,
 )
 from app.actions import ActionResponse, ActionService, ApprovalSelection
-from app.inputs import BodySettingsInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
 from app.models import Task
 from app.planning import Preferences
 from app.storage_service import DatabasePlanningService
@@ -164,6 +164,43 @@ def delete_weight_record(identifier: Identifier, service: Service):
     service.delete_weight_record(identifier)
     return Response(status_code=204)
 
+
+@router.get("/body/meals", response_model=list[MealEntryResponse], tags=["Body"])
+def meal_entries(service: Service):
+    return service.list_meal_entries()
+
+
+@router.post("/body/meals", response_model=MealEntryResponse, status_code=201, tags=["Body"])
+def create_meal_entry(value: MealEntryInput, service: Service):
+    return service.save_meal_entry(value)
+
+
+@router.put("/body/meals/{identifier}", response_model=MealEntryResponse, tags=["Body"])
+def update_meal_entry(identifier: Identifier, value: MealEntryInput, service: Service):
+    return service.save_meal_entry(value, identifier)
+
+
+@router.delete("/body/meals/{identifier}", status_code=204, tags=["Body"])
+def delete_meal_entry(identifier: Identifier, service: Service):
+    service.delete_meal_entry(identifier)
+    return Response(status_code=204)
+
+
+@router.get("/body/foods", response_model=list[FoodNutritionResponse], tags=["Body"])
+def food_nutrition(service: Service):
+    return service.list_food_nutrition()
+
+
+@router.get("/body/diet-review/current", response_model=DietReviewResponse | None, tags=["Body"])
+def current_diet_review(service: Service):
+    return service.get_diet_review()
+
+
+@router.post("/body/diet-review/current/analyze", response_model=DietReviewResponse, tags=["Body"])
+def analyze_current_diet(request: Request, service: Service):
+    payload = service.diet_analysis_payload()
+    analysis = request.app.state.diet_runner(payload)
+    return service.save_diet_analysis(analysis)
 
 @router.get("/preferences", response_model=PreferencesResponse, tags=["Preferences"])
 def preferences(service: Service):

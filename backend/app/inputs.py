@@ -66,3 +66,11 @@ class BodySettingsInput(Model):
 class WeightRecordInput(Model):
     measured_on: date | None = None
     weight_kg: float = Field(ge=20, le=400, allow_inf_nan=False)
+
+
+class MealEntryInput(Model):
+    eaten_on: date | None = None
+    meal_type: Literal["BREAKFAST", "LUNCH", "DINNER", "SNACK"]
+    food_name: str = Field(min_length=1, max_length=200)
+    calories_kcal: float | None = Field(default=None, ge=0, le=5000, allow_inf_nan=False)
+    protein_g: float | None = Field(default=None, ge=0, le=500, allow_inf_nan=False)

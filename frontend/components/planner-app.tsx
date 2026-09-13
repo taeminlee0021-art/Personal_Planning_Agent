@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 import { CalendarDays, ListTodo, LoaderCircle, MessageCircleMore, RotateCcw, Scale, Settings2, Sparkles, SunMedium } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import type { ActionSelection, AgentResponse, BodySettings, FixedSchedule, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord } from "@/lib/types"
 import { dateKey, defaultPreferences, emptyTask, formatDate, weekDays, type View } from "@/components/planner/helpers"
 import { TodayView } from "@/components/planner/today-view"
 import { TasksView } from "@/components/planner/tasks-view"
@@ -21,7 +21,7 @@ const navigation: { id: View; label: string; icon: typeof SunMedium }[] = [
   { id: "today", label: "오늘", icon: SunMedium },
   { id: "tasks", label: "할 일", icon: ListTodo },
   { id: "week", label: "주간 계획", icon: CalendarDays },
-  { id: "weight", label: "몸무게", icon: Scale },
+  { id: "weight", label: "건강", icon: Scale },
   { id: "agent", label: "플래너", icon: MessageCircleMore },
   { id: "settings", label: "설정", icon: Settings2 },
 ]
@@ -39,6 +39,9 @@ export function PlannerApp() {
   const [weekTodayItems, setWeekTodayItems] = useState<TodayItem[]>([])
   const [bodySettings, setBodySettings] = useState<BodySettings>({ height_cm: 176 })
   const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([])
+  const [mealEntries, setMealEntries] = useState<MealEntry[]>([])
+  const [foodNutrition, setFoodNutrition] = useState<FoodNutrition[]>([])
+  const [dietReview, setDietReview] = useState<DietReview | null>(null)
   const [loading, setLoading] = useState(true)
   const [serverState, setServerState] = useState<"checking" | "ready" | "failed">("checking")
   const [loadError, setLoadError] = useState("")
@@ -50,13 +53,14 @@ export function PlannerApp() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextTasks, nextToday, nextWeek, nextSchedules, nextPreferences, nextActions, nextRecurring, nextTodayItems, nextWeekTodayItems, nextBodySettings, nextWeights] = await Promise.all([
-        api.tasks(), api.plansToday(), api.plansWeek(), api.schedules(), api.preferences(), api.pendingActions(), api.recurringTasks(), api.todayItems(), api.weekTodayItems(), api.bodySettings(), api.weightRecords(),
+      const [nextTasks, nextToday, nextWeek, nextSchedules, nextPreferences, nextActions, nextRecurring, nextTodayItems, nextWeekTodayItems, nextBodySettings, nextWeights, nextMeals, nextFoods, nextDietReview] = await Promise.all([
+        api.tasks(), api.plansToday(), api.plansWeek(), api.schedules(), api.preferences(), api.pendingActions(), api.recurringTasks(), api.todayItems(), api.weekTodayItems(), api.bodySettings(), api.weightRecords(), api.mealEntries(), api.foodNutrition(), api.currentDietReview(),
       ])
       setTasks(nextTasks); setTodayPlans(nextToday); setWeekPlans(nextWeek)
       setSchedules(nextSchedules); setPreferences(nextPreferences); setActions(nextActions)
       setRecurringTasks(nextRecurring); setTodayItems(nextTodayItems); setWeekTodayItems(nextWeekTodayItems); setLoadError("")
       setBodySettings(nextBodySettings); setWeightRecords(nextWeights)
+      setMealEntries(nextMeals); setFoodNutrition(nextFoods); setDietReview(nextDietReview)
     } catch (error) { setLoadError(error instanceof Error ? error.message : "데이터를 불러오지 못했습니다.") }
     finally { setLoading(false) }
   }, [])
@@ -201,7 +205,18 @@ export function PlannerApp() {
     try { await api.updateBodySettings(height); await refresh(); toast.success("키를 저장했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "키를 저장하지 못했습니다."); throw error }
   }
-  async function toggleRecurringTask(item: RecurringTask) {
+  async function saveMeal(value: MealDraft) {
+    try { await api.createMealEntry(value); await refresh(); toast.success("식단을 기록했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "식단을 저장하지 못했습니다."); throw error }
+  }
+  async function removeMeal(id: number) {
+    try { await api.deleteMealEntry(id); await refresh(); toast.success("식단 기록을 삭제했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "식단을 삭제하지 못했습니다.") }
+  }
+  async function analyzeDiet() {
+    try { await api.analyzeDiet(); await refresh(); toast.success("이번 주 식단 평가를 완료했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "식단을 평가하지 못했습니다."); throw error }
+  }  async function toggleRecurringTask(item: RecurringTask) {
     try { await api.updateRecurringTask(item.id, { title: item.title, cadence: item.cadence, weekdays: item.weekdays, start_date: item.start_date, active: !item.active }); await refresh(); toast.success(item.active ? "반복을 잠시 껐습니다." : "반복을 다시 켰습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "반복 설정을 바꾸지 못했습니다.") }
   }
@@ -254,7 +269,7 @@ export function PlannerApp() {
         {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} openWeight={() => setView("weight")} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
         {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} refresh={refresh} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}
         {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} refresh={refresh} removeSchedule={removeSchedule} />}
-        {view === "weight" && <WeightView key={bodySettings.height_cm} loading={loading} settings={bodySettings} records={weightRecords} saveWeight={saveWeight} saveHeight={saveHeight} />}
+        {view === "weight" && <WeightView key={bodySettings.height_cm} loading={loading} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
         {view === "agent" && <AgentView loading={loading} message={message} setMessage={setMessage} sending={sending} agentError={agentError} latestResponse={latestResponse} actions={actions} deciding={deciding} sendMessage={sendMessage} decide={decide} />}
         {view === "settings" && <SettingsView loading={loading} recurringTasks={recurringTasks} preferences={preferences} setPreferences={setPreferences} refresh={refresh} toggleRecurringTask={toggleRecurringTask} removeRecurringTask={removeRecurringTask} savePreferences={savePreferences} />}
       </div>

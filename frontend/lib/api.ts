@@ -1,4 +1,4 @@
-import type { ActionSelection, AgentResponse, BodySettings, FixedSchedule, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord } from "@/lib/types"
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -49,6 +49,13 @@ export const api = {
   bodySettings: () => request<BodySettings>("/body/settings"),
   updateBodySettings: (height_cm: number) => request<BodySettings>("/body/settings", { method: "PUT", body: JSON.stringify({ height_cm }) }),
   weightRecords: () => request<WeightRecord[]>("/body/weights"),
+  mealEntries: () => request<MealEntry[]>("/body/meals"),
+  foodNutrition: () => request<FoodNutrition[]>("/body/foods"),
+  createMealEntry: (value: MealDraft) => request<MealEntry>("/body/meals", { method: "POST", body: JSON.stringify(value) }),
+  updateMealEntry: (id: number, value: MealDraft) => request<MealEntry>(`/body/meals/${id}`, { method: "PUT", body: JSON.stringify(value) }),
+  deleteMealEntry: (id: number) => request<void>(`/body/meals/${id}`, { method: "DELETE" }),
+  currentDietReview: () => request<DietReview | null>("/body/diet-review/current"),
+  analyzeDiet: () => request<DietReview>("/body/diet-review/current/analyze", { method: "POST", body: "{}" }),
   saveWeightRecord: (weight_kg: number, measured_on: string) => request<WeightRecord>("/body/weights", { method: "POST", body: JSON.stringify({ weight_kg, measured_on }) }),
   preferences: () => request<Preferences>("/preferences"),
   updatePreferences: (value: Omit<Preferences, "timezone">) => request<Preferences>("/preferences", { method: "PUT", body: JSON.stringify(value) }),

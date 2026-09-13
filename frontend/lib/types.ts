@@ -162,3 +162,51 @@ export interface WeightRecord {
   created_at: string
   updated_at: string
 }
+
+export type MealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
+
+export interface MealEntry {
+  id: number
+  eaten_on: string
+  meal_type: MealType
+  food_name: string
+  calories_kcal: number | null
+  protein_g: number | null
+  nutrition_source: "UNKNOWN" | "MANUAL" | "MEMORY" | "GPT" | "MIXED"
+  created_at: string
+  updated_at: string
+}
+
+export interface MealDraft {
+  eaten_on: string
+  meal_type: MealType
+  food_name: string
+  calories_kcal: number | null
+  protein_g: number | null
+}
+
+export interface FoodNutrition {
+  id: number
+  normalized_name: string
+  display_name: string
+  calories_kcal: number
+  protein_g: number
+  source: "MANUAL" | "GPT" | "MIXED"
+  created_at: string
+  updated_at: string
+}
+
+export interface DietReview {
+  id: number
+  week_start: string
+  summary: string
+  good_points: string[]
+  avoid_foods: string[]
+  limit_foods: string[]
+  total_calories_kcal: number
+  average_daily_calories_kcal: number
+  total_protein_g: number
+  average_daily_protein_g: number
+  created_at: string
+  updated_at: string
+}
