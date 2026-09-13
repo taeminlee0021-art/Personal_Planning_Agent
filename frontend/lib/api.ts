@@ -25,6 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  health: (signal?: AbortSignal) => request<{ status: string }>("/health", { signal }),
   tasks: () => request<Task[]>("/tasks"),
   createTask: (value: TaskDraft) => request<Task>("/tasks", { method: "POST", body: JSON.stringify(value) }),
   updateTask: (id: number, value: Partial<TaskDraft> & { status?: Task["status"] }) => request<Task>(`/tasks/${id}`, { method: "PUT", body: JSON.stringify(value) }),

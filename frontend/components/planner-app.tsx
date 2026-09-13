@@ -1,7 +1,7 @@
 "use client"
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
-import { CalendarDays, ListTodo, MessageCircleMore, RotateCcw, Scale, Settings2, Sparkles, SunMedium } from "lucide-react"
+import { CalendarDays, ListTodo, LoaderCircle, MessageCircleMore, RotateCcw, Scale, Settings2, Sparkles, SunMedium } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { ActionSelection, AgentResponse, BodySettings, FixedSchedule, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord } from "@/lib/types"
@@ -40,6 +40,7 @@ export function PlannerApp() {
   const [bodySettings, setBodySettings] = useState<BodySettings>({ height_cm: 176 })
   const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [serverState, setServerState] = useState<"checking" | "ready" | "failed">("checking")
   const [loadError, setLoadError] = useState("")
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
@@ -60,10 +61,45 @@ export function PlannerApp() {
     finally { setLoading(false) }
   }, [])
 
+  const waitForBackend = useCallback(async () => {
+    setServerState("checking")
+    const deadline = Date.now() + 180_000
+    while (Date.now() < deadline) {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 12_000)
+      try {
+        const result = await api.health(controller.signal)
+        if (result.status === "ok") {
+          setServerState("ready")
+          return
+        }
+      } catch {
+        // A sleeping Render instance can exceed one request's time limit.
+      } finally {
+        window.clearTimeout(timeout)
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 3_000))
+    }
+    setServerState("failed")
+    throw new Error("서버를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+  }, [])
+
+  const initialize = useCallback(async () => {
+    setLoading(true)
+    setLoadError("")
+    try {
+      await waitForBackend()
+      await refresh()
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "서버를 준비하지 못했습니다.")
+      setLoading(false)
+    }
+  }, [refresh, waitForBackend])
+
   useEffect(() => {
-    const timer = window.setTimeout(() => void refresh(), 0)
+    const timer = window.setTimeout(() => void initialize(), 0)
     return () => window.clearTimeout(timer)
-  }, [refresh])
+  }, [initialize])
 
   useEffect(() => {
     type ModelContext = { registerTool: (tool: unknown, options?: { signal?: AbortSignal }) => void | Promise<void> }
@@ -212,7 +248,8 @@ export function PlannerApp() {
 
     <SidebarInset className="min-h-svh min-w-0 bg-[#F8F9F6] pb-24 md:pb-0">
       <header className="flex min-h-16 items-center justify-between gap-3 border-b border-[#E1E5E0] bg-white/85 px-5 py-3 backdrop-blur md:px-9"><div><p className="text-sm font-medium text-[#78817D]">{dateTitle}</p><h1 className="text-xl font-bold tracking-tight text-[#1D2E29] md:text-2xl">{currentLabel}</h1></div><Button onClick={() => setView("agent")} className="h-10 rounded-xl bg-[#183D35] px-4 hover:bg-[#28564A]"><Sparkles className="size-4" /><span className="hidden sm:inline">플래너에게 요청</span><span className="sm:hidden">AI 계획</span></Button></header>
-      {loadError && <div role="alert" className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-[#E7C9C0] bg-[#FFF5F1] px-4 py-3 text-sm text-[#8A4634] md:mx-9"><span>{loadError}</span><Button variant="ghost" size="sm" onClick={() => { setLoading(true); void refresh() }}><RotateCcw />다시 시도</Button></div>}
+      {loading && serverState === "checking" && <div role="status" aria-live="polite" className="mx-5 mt-5 flex items-center gap-3 rounded-xl border border-[#C9D8D0] bg-[#F2F8F4] px-4 py-3 text-sm text-[#315B4D] md:mx-9"><LoaderCircle className="size-5 shrink-0 animate-spin" /><div><p className="font-semibold">서버를 준비하는 중입니다</p><p className="mt-0.5 text-[#63756E]">무료 서버가 다시 시작되는 데 최대 1~2분 정도 걸릴 수 있습니다. 이 화면에서 잠시 기다려 주세요.</p></div></div>}
+      {loadError && <div role="alert" className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-[#E7C9C0] bg-[#FFF5F1] px-4 py-3 text-sm text-[#8A4634] md:mx-9"><span>{loadError}</span><Button variant="ghost" size="sm" onClick={() => void initialize()}><RotateCcw />다시 시도</Button></div>}
       <div className="mx-auto w-full max-w-7xl p-5 md:p-9">
         {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} openWeight={() => setView("weight")} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
         {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} refresh={refresh} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}

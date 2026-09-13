@@ -1556,3 +1556,20 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - Deployment targets remain the existing Render service and existing private
   Sites project. This entry records authorization and the exact release candidate;
   terminal deployment status is verified through the hosting providers.
+
+## 2026-09-13 - Render cold-start recovery
+
+- Production Sites logs confirmed the reported iPhone Safari failure: the page
+  issued eleven data requests concurrently while the free Render backend was
+  asleep, and the Sites worker canceled those requests after about 90-97 seconds.
+- Added a dedicated frontend /api/health proxy to the backend's public /health
+  endpoint. Initial page loading and manual retry now probe health first with a
+  12-second per-attempt timeout and 3-second retry interval for up to 3 minutes.
+- While waiting, the responsive UI explicitly shows a server-preparation message.
+  Application data is requested only after health returns status=ok.
+- This is page-open readiness handling only. No timer, background monitor,
+  external keep-alive, or other mechanism keeps the Render service awake.
+- Frontend lint and production build passed. The production build includes
+  /api/health; local proxy smoke returned health 200 and page 200.
+- Deployment of this frontend-only update was explicitly requested; terminal
+  Sites deployment status is verified outside this source record.
