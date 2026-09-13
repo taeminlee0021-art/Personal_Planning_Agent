@@ -1608,3 +1608,19 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   with two upstream Starlette warnings; frontend ESLint and Vinext production
   build passed with the existing non-blocking client chunk-size warning. HTTP
   smoke checks returned 200 for the page, health and all new diet endpoints.
+## 2026-09-13 - Local weekly diet checkbox fix
+
+- The user reported that the Sunday `주간 식단 평가` Today checkbox navigated to
+  Health instead of completing the item. The shared health-prompt branch caused it.
+- Locally changed only the checkbox behavior: the diet-review circle now uses the
+  normal persisted complete/reopen action, while its title still opens Health.
+  The `몸무게 기록` circle continues to open the weight-entry workflow as before.
+- No commit, push or deployment was performed. Frontend ESLint, Vinext production
+  build and Git whitespace validation passed; the existing chunk warning remains.
+## 2026-09-13 - Weekly diet checkbox deployment authorization
+
+- After reviewing the local checkbox fix, the user explicitly authorized its
+  deployment to GitHub main and the existing owner-private Sites project.
+- The release changes only Today-view click routing plus documentation; no backend
+  schema, API, database data or OpenAI behavior changed. Frontend ESLint and Vinext
+  production build passed before authorization with the existing chunk warning.
