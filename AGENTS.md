@@ -1650,6 +1650,21 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   Its branch ID is `br-shiny-hall-axo9h3a6`. A read-only query on the backup
   confirmed 9 tasks, 11 recurring tasks, 114 Today items, 37 meal entries,
   6 weight records and 0 plans. The branch is isolated from production writes.
-- Source changes are committed locally. GitHub push will trigger Render's
-  automatic backend deployment; the existing owner-private Sites project will
-  then be updated while preserving its audience.
+- Source changes were committed and pushed to GitHub main. The existing
+  owner-private Sites project was updated while preserving its audience.
+- Deployment completed after the owner selected the Render account containing
+  `personal-planning-agent-api-64ij`. GitHub main contains commit `afaf7e4`.
+  The Render service did not automatically deploy that push; a manual latest
+  commit deployment of `afaf7e4` succeeded and became Live. Health returned 200,
+  and the deployed OpenAPI contains start_date and MONTHLY.
+- The existing owner-private Sites project deployed frontend source commit
+  `99819b4` as version 6. Its deployment succeeded at the original URL. The
+  refreshed UI exposes the task start-date field and monthly recurrence choice;
+  existing task data loaded without a write.
+- A read-only query after deployment confirmed the production PostgreSQL task
+  start-date column, monthly recurrence CHECK, and unchanged counts of 9 tasks,
+  11 recurring tasks, 114 Today items, 37 meal entries and 6 weight records.
+  The permanent pre-release Neon child branch remains available for recovery.
+- No live paid GPT diet review was invoked. The local Sites source clone used
+  for publishing remains at `.sites-release-source/` because workspace policy
+  rejected its recursive removal; it is untracked and not part of the release.
