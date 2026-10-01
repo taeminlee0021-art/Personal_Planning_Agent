@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch"
 const weekdayLabels = ["월", "화", "수", "목", "금", "토", "일"]
 const emptyRecurring = (): RecurringTaskDraft => ({ title: "", cadence: "DAILY", weekdays: [], start_date: dateKey(new Date()), active: true })
 
-export function RecurringDialog({ item, trigger, onSaved }: { item?: RecurringTask; trigger: React.ReactNode; onSaved: () => Promise<void> }) {
+export function RecurringDialog({ item, trigger, onSaved }: { item?: RecurringTask; trigger: React.ReactNode; onSaved: (saved: RecurringTask) => void }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<RecurringTaskDraft>(emptyRecurring)
@@ -37,9 +37,8 @@ export function RecurringDialog({ item, trigger, onSaved }: { item?: RecurringTa
     setSaving(true)
     try {
       const payload = { ...draft, title: draft.title.trim(), weekdays: draft.cadence === "WEEKLY" ? draft.weekdays : [] }
-      if (item) await api.updateRecurringTask(item.id, payload)
-      else await api.createRecurringTask(payload)
-      await onSaved()
+      const saved = item ? await api.updateRecurringTask(item.id, payload) : await api.createRecurringTask(payload)
+      onSaved(saved)
       setOpen(false)
       toast.success(item ? "반복 작업을 수정했습니다." : "반복 작업을 추가했습니다.")
     } catch (error) {

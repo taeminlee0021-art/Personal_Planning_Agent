@@ -26,6 +26,15 @@ const navigation: { id: View; label: string; icon: typeof SunMedium }[] = [
   { id: "settings", label: "설정", icon: Settings2 },
 ]
 
+type RefreshPart = "tasks" | "todayPlans" | "weekPlans" | "schedules" | "preferences" | "actions" | "recurring" | "todayItems" | "weekTodayItems" | "bodySettings" | "weights" | "meals" | "foods" | "dietReview"
+const allParts: RefreshPart[] = ["tasks", "todayPlans", "weekPlans", "schedules", "preferences", "actions", "recurring", "todayItems", "weekTodayItems", "bodySettings", "weights", "meals", "foods", "dietReview"]
+
+function upsertById<T extends { id: number }>(current: T[], saved: T): T[] {
+  return current.some((item) => item.id === saved.id)
+    ? current.map((item) => item.id === saved.id ? saved : item)
+    : [...current, saved]
+}
+
 export function PlannerApp() {
   const [view, setView] = useState<View>("today")
   const [tasks, setTasks] = useState<Task[]>([])
@@ -51,18 +60,40 @@ export function PlannerApp() {
   const [deciding, setDeciding] = useState(false)
   const [latestResponse, setLatestResponse] = useState<AgentResponse | null>(null)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (parts: readonly RefreshPart[] = allParts) => {
     try {
-      const [nextTasks, nextToday, nextWeek, nextSchedules, nextPreferences, nextActions, nextRecurring, nextTodayItems, nextWeekTodayItems, nextBodySettings, nextWeights, nextMeals, nextFoods, nextDietReview] = await Promise.all([
-        api.tasks(), api.plansToday(), api.plansWeek(), api.schedules(), api.preferences(), api.pendingActions(), api.recurringTasks(), api.todayItems(), api.weekTodayItems(), api.bodySettings(), api.weightRecords(), api.mealEntries(), api.foodNutrition(), api.currentDietReview(),
+      await Promise.all([
+        parts.includes("tasks") && api.tasks().then(setTasks),
+        parts.includes("todayPlans") && api.plansToday().then(setTodayPlans),
+        parts.includes("weekPlans") && api.plansWeek().then(setWeekPlans),
+        parts.includes("schedules") && api.schedules().then(setSchedules),
+        parts.includes("preferences") && api.preferences().then(setPreferences),
+        parts.includes("actions") && api.pendingActions().then(setActions),
+        parts.includes("recurring") && api.recurringTasks().then(setRecurringTasks),
+        parts.includes("todayItems") && api.todayItems().then(setTodayItems),
+        parts.includes("weekTodayItems") && api.weekTodayItems().then(setWeekTodayItems),
+        parts.includes("bodySettings") && api.bodySettings().then(setBodySettings),
+        parts.includes("weights") && api.weightRecords().then(setWeightRecords),
+        parts.includes("meals") && api.mealEntries().then(setMealEntries),
+        parts.includes("foods") && api.foodNutrition().then(setFoodNutrition),
+        parts.includes("dietReview") && api.currentDietReview().then(setDietReview),
       ])
-      setTasks(nextTasks); setTodayPlans(nextToday); setWeekPlans(nextWeek)
-      setSchedules(nextSchedules); setPreferences(nextPreferences); setActions(nextActions)
-      setRecurringTasks(nextRecurring); setTodayItems(nextTodayItems); setWeekTodayItems(nextWeekTodayItems); setLoadError("")
-      setBodySettings(nextBodySettings); setWeightRecords(nextWeights)
-      setMealEntries(nextMeals); setFoodNutrition(nextFoods); setDietReview(nextDietReview)
+      setLoadError("")
     } catch (error) { setLoadError(error instanceof Error ? error.message : "데이터를 불러오지 못했습니다.") }
     finally { setLoading(false) }
+  }, [])
+
+  const onTaskSaved = useCallback((saved: Task) => setTasks((current) => upsertById(current, saved)), [])
+  const onScheduleSaved = useCallback((saved: FixedSchedule) => setSchedules((current) =>
+    upsertById(current, saved).sort((left, right) => left.start_datetime.localeCompare(right.start_datetime))), [])
+  const onRecurringSaved = useCallback((saved: RecurringTask) => {
+    setRecurringTasks((current) => upsertById(current, saved))
+    void refresh(["todayItems", "weekTodayItems"])
+  }, [refresh])
+  const onTodayItemSaved = useCallback((saved: TodayItem) => {
+    setTodayItems((current) => upsertById(current, saved).sort((left, right) => left.order_index - right.order_index))
+    setWeekTodayItems((current) => upsertById(current, saved).sort((left, right) =>
+      left.item_date.localeCompare(right.item_date) || left.order_index - right.order_index))
   }, [])
 
   const waitForBackend = useCallback(async () => {
@@ -124,13 +155,13 @@ export function PlannerApp() {
           const value = input as Partial<typeof emptyTask>
           if (!value.title?.trim() || !Number.isInteger(value.estimated_minutes)) throw new Error("제목과 올바른 예상 시간이 필요합니다.")
           const created = await api.createTask({ ...emptyTask, title: value.title.trim(), estimated_minutes: value.estimated_minutes!, weekly_target_count: value.weekly_target_count ?? 1, priority: value.priority ?? "MEDIUM" })
-          await refresh(); setView("tasks"); return { id: created.id, status: created.status }
+          onTaskSaved(created); setView("tasks"); return { id: created.id, status: created.status }
         },
       }, { signal: lifecycle.signal })
     }
     void register().catch(() => {})
     return () => lifecycle.abort()
-  }, [refresh])
+  }, [onTaskSaved])
 
   const weeklyProgress = useMemo(() => {
     const unmatchedChecklist = weekTodayItems.filter((item) => item.source !== "RECURRING" && !weekPlans.some((plan) =>
@@ -150,78 +181,114 @@ export function PlannerApp() {
   }, [recurringTasks, schedules, weekPlans, weekTodayItems])
 
   async function toggleTask(task: Task) {
-    try { await api.updateTask(task.id, { status: task.status === "COMPLETED" ? "TODO" : "COMPLETED" }); await refresh(); toast.success(task.status === "COMPLETED" ? "할 일을 다시 열었습니다." : "할 일을 완료했습니다.") }
+    try {
+      const saved = await api.updateTask(task.id, { status: task.status === "COMPLETED" ? "TODO" : "COMPLETED" })
+      onTaskSaved(saved)
+      const syncLinkedItem = (item: TodayItem) => item.task_id === task.id && item.item_date === dateKey(new Date()) ? {
+        ...item, status: saved.status === "COMPLETED" ? "COMPLETED" as const : "TODO" as const,
+        completion_count: saved.status === "COMPLETED" ? item.completion_target : 0,
+      } : item
+      setTodayItems((current) => current.map(syncLinkedItem))
+      setWeekTodayItems((current) => current.map(syncLinkedItem))
+      toast.success(task.status === "COMPLETED" ? "할 일을 다시 열었습니다." : "할 일을 완료했습니다.")
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : "상태를 바꾸지 못했습니다.") }
   }
   async function addTaskToToday(task: Task) {
-    try { await api.createTodayItemFromTask(task.id); await refresh(); toast.success("오늘 할 일에 추가했습니다.") }
+    try { onTodayItemSaved(await api.createTodayItemFromTask(task.id)); toast.success("오늘 할 일에 추가했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "오늘에 추가하지 못했습니다.") }
   }
   async function removeTask(id: number) {
-    try { await api.deleteTask(id); await refresh(); toast.success("할 일을 삭제했습니다.") }
+    try { await api.deleteTask(id); setTasks((current) => current.filter((task) => task.id !== id)); void refresh(["todayItems", "weekTodayItems"]); toast.success("할 일을 삭제했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "삭제하지 못했습니다.") }
   }
   async function removeSchedule(id: number) {
-    try { await api.deleteSchedule(id); await refresh(); toast.success("고정 일정을 삭제했습니다.") }
+    try { await api.deleteSchedule(id); setSchedules((current) => current.filter((item) => item.id !== id)); toast.success("고정 일정을 삭제했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "삭제하지 못했습니다.") }
   }
   async function toggleSchedule(schedule: FixedSchedule) {
     try {
-      await api.updateScheduleStatus(schedule.id, !schedule.completed)
-      await refresh()
+      onScheduleSaved(await api.updateScheduleStatus(schedule.id, !schedule.completed))
       toast.success(schedule.completed ? "고정 일정을 다시 열었습니다." : "고정 일정을 완료했습니다.")
     } catch (error) { toast.error(error instanceof Error ? error.message : "일정 상태를 바꾸지 못했습니다.") }
   }
   async function addTodayItem(title: string) {
-    try { await api.createTodayItem(title); await refresh(); toast.success("오늘 할 일에 추가했습니다.") }
+    try { onTodayItemSaved(await api.createTodayItem(title)); toast.success("오늘 할 일에 추가했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "추가하지 못했습니다."); throw error }
   }
   async function toggleTodayItem(item: TodayItem) {
-    try { await api.updateTodayItem(item.id, item.status === "COMPLETED" ? "TODO" : "COMPLETED"); await refresh() }
+    try {
+      onTodayItemSaved(await api.updateTodayItem(item.id, item.status === "COMPLETED" ? "TODO" : "COMPLETED"))
+      if (item.task_id !== null) void refresh(["tasks"])
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : "상태를 바꾸지 못했습니다.") }
   }
   async function togglePlan(plan: Plan) {
     try {
-      await api.updatePlanStatus(plan.id, plan.status === "COMPLETED" ? "PLANNED" : "COMPLETED")
-      await refresh()
+      const saved = await api.updatePlanStatus(plan.id, plan.status === "COMPLETED" ? "PLANNED" : "COMPLETED")
+      if (dateKey(saved.start_datetime) === dateKey(new Date())) {
+        setTodayPlans((current) => upsertById(current, saved))
+      }
+      setWeekPlans((current) => upsertById(current, saved))
+      void refresh(["tasks"])
       toast.success(plan.status === "COMPLETED" ? "시간 계획을 다시 열었습니다." : "시간 계획을 완료했습니다.")
     } catch (error) { toast.error(error instanceof Error ? error.message : "계획 상태를 바꾸지 못했습니다.") }
   }
   async function removeTodayItem(id: number) {
-    try { await api.deleteTodayItem(id); await refresh(); toast.success("오늘 할 일을 삭제했습니다.") }
+    try { await api.deleteTodayItem(id); setTodayItems((current) => current.filter((item) => item.id !== id)); setWeekTodayItems((current) => current.filter((item) => item.id !== id)); toast.success("오늘 할 일을 삭제했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "삭제하지 못했습니다.") }
   }
   async function reorderTodayItems(orderedIds: number[]) {
     const positions = new Map(orderedIds.map((id, index) => [id, index]))
     setTodayItems((current) => [...current].sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0)))
-    try { setTodayItems(await api.reorderTodayItems(orderedIds)) }
-    catch (error) { await refresh(); toast.error(error instanceof Error ? error.message : "순서를 저장하지 못했습니다.") }
+    try {
+      const reordered = await api.reorderTodayItems(orderedIds)
+      setTodayItems(reordered)
+      setWeekTodayItems((current) => current.map((item) => reordered.find((row) => row.id === item.id) ?? item))
+    }
+    catch (error) { await refresh(["todayItems", "weekTodayItems"]); toast.error(error instanceof Error ? error.message : "순서를 저장하지 못했습니다.") }
   }
   async function saveWeight(weight: number, measuredOn: string) {
-    try { await api.saveWeightRecord(weight, measuredOn); await refresh(); toast.success("몸무게를 기록했습니다.") }
+    try {
+      const saved = await api.saveWeightRecord(weight, measuredOn)
+      setWeightRecords((current) => upsertById(current, saved).sort((left, right) => left.measured_on.localeCompare(right.measured_on)))
+      void refresh(["todayItems", "weekTodayItems"])
+      toast.success("몸무게를 기록했습니다.")
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : "몸무게를 저장하지 못했습니다."); throw error }
   }
   async function saveHeight(height: number) {
-    try { await api.updateBodySettings(height); await refresh(); toast.success("키를 저장했습니다.") }
+    try { setBodySettings(await api.updateBodySettings(height)); toast.success("키를 저장했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "키를 저장하지 못했습니다."); throw error }
   }
   async function saveMeal(value: MealDraft) {
-    try { await api.createMealEntry(value); await refresh(); toast.success("식단을 기록했습니다.") }
+    try {
+      const saved = await api.createMealEntry(value)
+      setMealEntries((current) => upsertById(current, saved).sort((left, right) => left.eaten_on.localeCompare(right.eaten_on) || left.id - right.id))
+      void refresh(["foods", "dietReview", "todayItems", "weekTodayItems"])
+      toast.success("식단을 기록했습니다.")
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : "식단을 저장하지 못했습니다."); throw error }
   }
   async function removeMeal(id: number) {
-    try { await api.deleteMealEntry(id); await refresh(); toast.success("식단 기록을 삭제했습니다.") }
+    try {
+      await api.deleteMealEntry(id)
+      setMealEntries((current) => current.filter((item) => item.id !== id))
+      void refresh(["dietReview", "todayItems", "weekTodayItems"])
+      toast.success("식단 기록을 삭제했습니다.")
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : "식단을 삭제하지 못했습니다.") }
   }
   async function analyzeDiet() {
-    try { await api.analyzeDiet(); await refresh(); toast.success("이번 주 식단 평가를 완료했습니다.") }
+    try { setDietReview(await api.analyzeDiet()); void refresh(["todayItems", "weekTodayItems"]); toast.success("이번 주 식단 평가를 완료했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "식단을 평가하지 못했습니다."); throw error }
-  }  async function toggleRecurringTask(item: RecurringTask) {
-    try { await api.updateRecurringTask(item.id, { title: item.title, cadence: item.cadence, weekdays: item.weekdays, start_date: item.start_date, active: !item.active }); await refresh(); toast.success(item.active ? "반복을 잠시 껐습니다." : "반복을 다시 켰습니다.") }
+  }
+  async function toggleRecurringTask(item: RecurringTask) {
+    try { onRecurringSaved(await api.updateRecurringTask(item.id, { title: item.title, cadence: item.cadence, weekdays: item.weekdays, start_date: item.start_date, active: !item.active })); toast.success(item.active ? "반복을 잠시 껐습니다." : "반복을 다시 켰습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "반복 설정을 바꾸지 못했습니다.") }
   }
   async function removeRecurringTask(id: number) {
-    try { await api.deleteRecurringTask(id); await refresh(); toast.success("반복 작업을 삭제했습니다.") }
+    try { await api.deleteRecurringTask(id); setRecurringTasks((current) => current.filter((item) => item.id !== id)); void refresh(["todayItems", "weekTodayItems"]); toast.success("반복 작업을 삭제했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "삭제하지 못했습니다.") }
   }
   async function savePreferences(event: FormEvent) {
@@ -234,19 +301,19 @@ export function PlannerApp() {
         weekend_available_until: preferences.weekend_available_until,
         max_daily_planning_minutes: preferences.max_daily_planning_minutes,
       }
-      await api.updatePreferences(payload); await refresh(); toast.success("계획 가능 시간을 저장했습니다.")
+      setPreferences(await api.updatePreferences(payload)); toast.success("계획 가능 시간을 저장했습니다.")
     }
     catch (error) { toast.error(error instanceof Error ? error.message : "선호 설정을 저장하지 못했습니다.") }
   }
   async function sendMessage(event: FormEvent) {
     event.preventDefault(); if (!message.trim()) return; setSending(true); setAgentError("")
-    try { const response = await api.sendAgentMessage(message.trim()); setLatestResponse(response); setMessage(""); await refresh(); toast.success(response.action_id ? "검토할 계획 제안이 도착했습니다." : "플래너가 요청을 검토했습니다.") }
+    try { const response = await api.sendAgentMessage(message.trim()); setLatestResponse(response); setMessage(""); await refresh(["actions"]); toast.success(response.action_id ? "검토할 계획 제안이 도착했습니다." : "플래너가 요청을 검토했습니다.") }
     catch (error) { const detail = error instanceof Error ? error.message : "플래너 요청에 실패했습니다."; setAgentError(detail); toast.error(detail) }
     finally { setSending(false) }
   }
   async function decide(id: number, decision: "approve" | "reject", selection?: ActionSelection) {
     setDeciding(true)
-    try { if (decision === "approve") await api.approveAction(id, selection); else await api.rejectAction(id); await refresh(); setLatestResponse(null); toast.success(decision === "approve" ? "선택한 제안을 적용했습니다." : "제안을 거절했습니다.") }
+    try { if (decision === "approve") await api.approveAction(id, selection); else await api.rejectAction(id); await refresh(decision === "approve" ? ["actions", "tasks", "todayPlans", "weekPlans"] : ["actions"]); setLatestResponse(null); toast.success(decision === "approve" ? "선택한 제안을 적용했습니다." : "제안을 거절했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "결정을 처리하지 못했습니다.") }
     finally { setDeciding(false) }
   }
@@ -267,11 +334,11 @@ export function PlannerApp() {
       {loadError && <div role="alert" className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-[#E7C9C0] bg-[#FFF5F1] px-4 py-3 text-sm text-[#8A4634] md:mx-9"><span>{loadError}</span><Button variant="ghost" size="sm" onClick={() => void initialize()}><RotateCcw />다시 시도</Button></div>}
       <div className="mx-auto w-full max-w-7xl p-5 md:p-9">
         {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} openWeight={() => setView("weight")} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
-        {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} refresh={refresh} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}
-        {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} refresh={refresh} removeSchedule={removeSchedule} />}
+        {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} onTaskSaved={onTaskSaved} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}
+        {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} onScheduleSaved={onScheduleSaved} removeSchedule={removeSchedule} />}
         {view === "weight" && <WeightView key={bodySettings.height_cm} loading={loading} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
         {view === "agent" && <AgentView loading={loading} message={message} setMessage={setMessage} sending={sending} agentError={agentError} latestResponse={latestResponse} actions={actions} deciding={deciding} sendMessage={sendMessage} decide={decide} />}
-        {view === "settings" && <SettingsView loading={loading} recurringTasks={recurringTasks} preferences={preferences} setPreferences={setPreferences} refresh={refresh} toggleRecurringTask={toggleRecurringTask} removeRecurringTask={removeRecurringTask} savePreferences={savePreferences} />}
+        {view === "settings" && <SettingsView loading={loading} recurringTasks={recurringTasks} preferences={preferences} setPreferences={setPreferences} onRecurringSaved={onRecurringSaved} toggleRecurringTask={toggleRecurringTask} removeRecurringTask={removeRecurringTask} savePreferences={savePreferences} />}
       </div>
     </SidebarInset>
 

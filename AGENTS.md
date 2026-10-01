@@ -1668,3 +1668,22 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - No live paid GPT diet review was invoked. The local Sites source clone used
   for publishing remains at `.sites-release-source/` because workspace policy
   rejected its recursive removal; it is untracked and not part of the release.
+
+## 2026-10-01 - Local save latency optimization
+
+- The user clarified that the recurring delay occurs after save and other
+  buttons, and does not want a paid hosting plan or cold-start optimization.
+- Frontend mutations had awaited a full 14-resource reload before completing.
+  Successful task, schedule, Today, plan, body and preference writes now use
+  their API responses to update local state. Cross-view data reloads are
+  limited to affected resources and run in the background where appropriate.
+  Initial page loading remains unchanged.
+- Local UI smoke on an isolated temporary SQLite database confirmed that
+  creating a task and toggling a Today item each issued only its mutation
+  request, with immediate visible updates. No production data was touched.
+- Frontend TypeScript, ESLint, Vinext production build and Git whitespace
+  checks passed. The existing non-blocking client chunk-size warning remains.
+- The user reviewed the local result and authorized production deployment on
+  October 1. This release changes frontend behavior only; no backend schema,
+  migration or production data writes are needed. Production latency after
+  deployment remains to be measured.

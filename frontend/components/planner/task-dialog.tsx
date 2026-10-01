@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 
-export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: React.ReactNode; onSaved: () => Promise<void> }) {
+export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: React.ReactNode; onSaved: (saved: Task) => void }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<TaskDraft>(emptyTask)
@@ -33,9 +33,8 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
     }
     setSaving(true)
     try {
-      if (task) await api.updateTask(task.id, draft)
-      else await api.createTask(draft)
-      await onSaved(); setOpen(false)
+      const saved = task ? await api.updateTask(task.id, draft) : await api.createTask(draft)
+      onSaved(saved); setOpen(false)
       toast.success(task ? "할 일을 수정했습니다." : "할 일을 추가했습니다.")
     } catch (error) { toast.error(error instanceof Error ? error.message : "저장하지 못했습니다.") }
     finally { setSaving(false) }

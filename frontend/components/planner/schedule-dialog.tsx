@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-export function ScheduleDialog({ schedule, trigger, onSaved }: { schedule?: FixedSchedule; trigger: React.ReactNode; onSaved: () => Promise<void> }) {
+export function ScheduleDialog({ schedule, trigger, onSaved }: { schedule?: FixedSchedule; trigger: React.ReactNode; onSaved: (saved: FixedSchedule) => void }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<ScheduleDraft>(emptySchedule)
@@ -23,9 +23,8 @@ export function ScheduleDialog({ schedule, trigger, onSaved }: { schedule?: Fixe
     event.preventDefault(); setSaving(true)
     try {
       const payload = { ...draft, start_datetime: toAware(draft.start_datetime), end_datetime: toAware(draft.end_datetime) }
-      if (schedule) await api.updateSchedule(schedule.id, payload)
-      else await api.createSchedule(payload)
-      await onSaved(); setOpen(false); toast.success(schedule ? "고정 일정을 수정했습니다." : "고정 일정을 추가했습니다.")
+      const saved = schedule ? await api.updateSchedule(schedule.id, payload) : await api.createSchedule(payload)
+      onSaved(saved); setOpen(false); toast.success(schedule ? "고정 일정을 수정했습니다." : "고정 일정을 추가했습니다.")
     } catch (error) { toast.error(error instanceof Error ? error.message : "저장하지 못했습니다.") }
     finally { setSaving(false) }
   }
