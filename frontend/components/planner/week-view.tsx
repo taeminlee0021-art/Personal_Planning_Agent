@@ -2,7 +2,7 @@
 
 import { CheckCircle2, ClipboardList, Pencil, Plus, Trash2 } from "lucide-react"
 import type { FixedSchedule, Plan, RecurringTask, TodayItem } from "@/lib/types"
-import { dateKey, duration, formatDate, formatTime, weekDays } from "@/components/planner/helpers"
+import { dateKey, duration, formatDate, formatTime, recurringOnDate, weekDays } from "@/components/planner/helpers"
 import { ScheduleDialog } from "@/components/planner/schedule-dialog"
 import { LoadingCards } from "@/components/planner/shared"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
@@ -23,7 +23,7 @@ export function WeekView({ loading, plans, schedules, recurringTasks, weekTodayI
           const activityPlans = plans.filter((plan) => plan.title === title)
           const activityItems = weekTodayItems.filter((item) => item.title === title)
           const recurringPlanned = recurringTasks.filter((item) => item.active && item.title === title).reduce((count, item) =>
-            count + days.filter((day, index) => day >= item.start_date && (item.cadence === "DAILY" || item.weekdays.includes(index))).length, 0)
+            count + days.filter((day) => recurringOnDate(item, day)).length, 0)
           const unmatchedManual = activityItems.filter((item) => item.source !== "RECURRING" && !activityPlans.some((plan) => dateKey(plan.start_datetime) === item.item_date))
           const recurringExecuted = activityItems.filter((item) => item.source === "RECURRING" && item.status === "COMPLETED").length
           const planned = activityPlans.length + recurringPlanned + unmatchedManual.length
@@ -31,12 +31,12 @@ export function WeekView({ loading, plans, schedules, recurringTasks, weekTodayI
           return <article key={title} className="rounded-xl border border-[#DDE5E0] bg-[#FAFCFA] p-4"><p className="truncate font-semibold text-[#2D423A]">{title}</p><div className="mt-3 grid grid-cols-2 gap-2 text-center"><div><p className="text-xl font-bold text-[#345F52]">{planned}</p><p className="text-sm text-[#77827D]">이번 주 계획</p></div><div><p className="text-xl font-bold text-[#345F52]">{executed}</p><p className="text-sm text-[#77827D]">실행 완료</p></div></div></article>
         })}</div>
       </section>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">{days.map((day, dayIndex) => {
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">{days.map((day) => {
       const dayPlans = plans.filter((plan) => dateKey(plan.start_datetime) === day)
       const fixed = schedules.filter((item) => dateKey(item.start_datetime) === day)
       const pendingFixed = fixed.filter((item) => !item.completed)
       const completedFixed = fixed.filter((item) => item.completed)
-      const recurring = recurringTasks.filter((item) => item.active && day >= item.start_date && (item.cadence === "DAILY" || item.weekdays.includes(dayIndex)))
+      const recurring = recurringTasks.filter((item) => item.active && recurringOnDate(item, day))
       const isToday = day === today
       const untimedItems = weekTodayItems.filter((item) => item.item_date === day && item.source !== "RECURRING" && !dayPlans.some((plan) => item.task_id !== null && plan.task_id === item.task_id))
       const pendingPlans = dayPlans.filter((plan) => plan.status !== "COMPLETED")

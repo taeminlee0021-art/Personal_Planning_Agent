@@ -34,7 +34,7 @@ class ManualPlanInput(Model):
 
 class RecurringTaskInput(Model):
     title: str = Field(min_length=1, max_length=120)
-    cadence: Literal["DAILY", "WEEKLY"]
+    cadence: Literal["DAILY", "WEEKLY", "MONTHLY"]
     weekdays: list[int] = Field(default_factory=list, max_length=7)
     start_date: date | None = None
     active: bool = True
@@ -52,6 +52,8 @@ class RecurringTaskInput(Model):
             raise ValueError("Daily recurrence does not use weekdays")
         if self.cadence == "WEEKLY" and not self.weekdays:
             raise ValueError("Weekly recurrence needs at least one weekday")
+        if self.cadence == "MONTHLY" and (self.weekdays or self.start_date is None):
+            raise ValueError("Monthly recurrence needs a start date and no weekdays")
         return self
 
 

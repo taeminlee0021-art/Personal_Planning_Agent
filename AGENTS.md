@@ -1624,3 +1624,32 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - The release changes only Today-view click routing plus documentation; no backend
   schema, API, database data or OpenAI behavior changed. Frontend ESLint and Vinext
   production build passed before authorization with the existing chunk warning.
+
+## 2026-10-01 - Monthly recurrence, task start date, contextual diet review
+
+- The user requested monthly recurring tasks, task start dates, and a diet GPT
+  review that accounts for recorded meal portions and body measurements. The user
+  then authorized a Git commit and production deployment, with the explicit
+  requirement that existing production data must not be lost.
+- Monthly occurrences use the recurrence start day, clamping days 29-31 to the
+  final day of shorter months. Task start dates are stored and exposed through
+  the API and responsive task form, and planning rejects assignments before the
+  start date. Existing tasks without a start date remain valid.
+- Diet review instructions now include the latest applicable weight and actual
+  recorded portions, distinguish missing meal dates, and avoid unsupported
+  claims such as calling a small amount of rice a carbohydrate-heavy day.
+- SQLite and PostgreSQL migrations add the task column and expand the recurrence
+  constraint while retaining existing rows. The SQLite path preserves dependent
+  Today rows and autoincrement behavior. Migration tests cover existing data.
+- Verification before deployment: 211 backend tests, frontend TypeScript and
+  ESLint, and direct Vinext production build passed. The existing client chunk
+  warning remains; no paid GPT review was invoked.
+- Before deployment, created Neon child branch
+  `backup-before-2026-10-01-release` from the `planner` project's production
+  branch with data and schema at the current point in time and auto-delete Never.
+  Its branch ID is `br-shiny-hall-axo9h3a6`. A read-only query on the backup
+  confirmed 9 tasks, 11 recurring tasks, 114 Today items, 37 meal entries,
+  6 weight records and 0 plans. The branch is isolated from production writes.
+- Source changes are committed locally. GitHub push will trigger Render's
+  automatic backend deployment; the existing owner-private Sites project will
+  then be updated while preserving its audience.

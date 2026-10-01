@@ -64,6 +64,19 @@ def test_tasks_crud_full_fields_and_partial_update(client):
     assert client.get(f"/api/tasks/{row['id']}").status_code == 404
 
 
+def test_task_start_date_api_and_date_order(client):
+    row = task(client, start_date="2026-09-08", due_date="2026-09-10")
+    assert row["start_date"] == "2026-09-08"
+    assert client.post(f"/api/today-items/from-task/{row['id']}", json={}).status_code == 409
+    assert client.put(f"/api/tasks/{row['id']}", json={"start_date": "2026-09-11"}).status_code == 422
+    assert client.get(f"/api/tasks/{row['id']}").json()["start_date"] == "2026-09-08"
+    assert client.put(f"/api/tasks/{row['id']}", json={"start_date": None}).json()["start_date"] is None
+    assert client.post("/api/tasks", json={
+        "title": "Bad dates", "estimated_minutes": 30,
+        "start_date": "2026-09-11", "due_date": "2026-09-10",
+    }).status_code == 422
+
+
 @pytest.mark.parametrize("body", [
     {"title": "", "estimated_minutes": 60},
     {"title": "Task", "estimated_minutes": 0},
@@ -166,6 +179,19 @@ def test_future_recurring_start_date_is_saved_and_not_materialized_early(client)
 
     client.app.state.service._now = NOW + timedelta(days=2)
     assert [item["title"] for item in client.get("/api/today-items").json()] == ["수요일부터 시작"]
+
+
+def test_monthly_recurring_api(client):
+    monthly = client.post("/api/recurring-tasks", json={
+        "title": "월말 정산", "cadence": "MONTHLY", "start_date": "2026-01-31",
+    })
+    assert monthly.status_code == 201
+    assert monthly.json()["cadence"] == "MONTHLY"
+    client.app.state.service._now = datetime(2026, 9, 30, 8, tzinfo=KST)
+    assert [item["title"] for item in client.get("/api/today-items").json()] == ["월말 정산"]
+    assert client.post("/api/recurring-tasks", json={
+        "title": "Bad", "cadence": "MONTHLY", "weekdays": [0], "start_date": "2026-01-31",
+    }).status_code == 422
 
 
 def test_today_items_can_be_reordered_only_as_a_complete_unique_list(client):

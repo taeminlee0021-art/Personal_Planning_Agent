@@ -36,7 +36,7 @@ export function RecurringDialog({ item, trigger, onSaved }: { item?: RecurringTa
     }
     setSaving(true)
     try {
-      const payload = { ...draft, title: draft.title.trim(), weekdays: draft.cadence === "DAILY" ? [] : draft.weekdays }
+      const payload = { ...draft, title: draft.title.trim(), weekdays: draft.cadence === "WEEKLY" ? draft.weekdays : [] }
       if (item) await api.updateRecurringTask(item.id, payload)
       else await api.createRecurringTask(payload)
       await onSaved()
@@ -61,11 +61,13 @@ export function RecurringDialog({ item, trigger, onSaved }: { item?: RecurringTa
         <label className="grid gap-1.5 text-sm font-medium">시작일<Input required type="date" value={draft.start_date} onChange={(event) => setDraft({ ...draft, start_date: event.target.value })} /></label>
         <fieldset className="grid gap-2">
           <legend className="mb-2 text-sm font-medium">반복 주기</legend>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button type="button" variant={draft.cadence === "DAILY" ? "default" : "outline"} className={draft.cadence === "DAILY" ? "bg-[#183D35]" : ""} onClick={() => setDraft({ ...draft, cadence: "DAILY", weekdays: [] })}>매일</Button>
             <Button type="button" variant={draft.cadence === "WEEKLY" ? "default" : "outline"} className={draft.cadence === "WEEKLY" ? "bg-[#183D35]" : ""} onClick={() => setDraft({ ...draft, cadence: "WEEKLY" })}>매주</Button>
+            <Button type="button" variant={draft.cadence === "MONTHLY" ? "default" : "outline"} className={draft.cadence === "MONTHLY" ? "bg-[#183D35]" : ""} onClick={() => setDraft({ ...draft, cadence: "MONTHLY", weekdays: [] })}>매월</Button>
           </div>
         </fieldset>
+        {draft.cadence === "MONTHLY" && <p className="text-sm text-[#64736C]">시작일의 날짜에 매월 반복됩니다. 29~31일이 없는 달에는 그 달의 마지막 날에 등록됩니다.</p>}
         {draft.cadence === "WEEKLY" && <fieldset>
           <legend className="mb-2 text-sm font-medium">요일 선택</legend>
           <div className="grid grid-cols-7 gap-1.5">{weekdayLabels.map((label, day) => <button key={label} type="button" aria-pressed={draft.weekdays.includes(day)} onClick={() => toggleWeekday(day)} className={`aspect-square min-h-10 rounded-xl border text-sm font-semibold transition ${draft.weekdays.includes(day) ? "border-[#356859] bg-[#DDE9E3] text-[#183D35]" : "bg-white text-[#707A75] hover:bg-[#F3F5F1]"}`}>{label}</button>)}</div>

@@ -149,6 +149,8 @@ def validate_plan(
             raise ValueError("Plan is outside availability hours")
         if span.minutes != task.estimated_minutes:
             raise ValueError("Plan duration does not match task")
+        if task.start_date and span.start.date() < task.start_date:
+            raise ValueError("Plan precedes task start date")
         if task.due_date and (span.end - timedelta(microseconds=1)).date() > task.due_date:
             raise ValueError("Plan exceeds task deadline")
         if any(span.overlaps(event) for event in fixed):

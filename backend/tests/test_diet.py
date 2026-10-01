@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 
 from app import database as db
 from app.diet import DietAnalysis, NutritionEstimate
-from app.inputs import MealEntryInput
+from app.diet import INSTRUCTIONS
+from app.inputs import MealEntryInput, WeightRecordInput
 from app.main import create_app
 from app.storage_service import DatabasePlanningService
 
@@ -44,6 +45,10 @@ def test_gpt_estimate_is_validated_saved_and_reused(tmp_path):
         assert prompts["주간 식단 평가"]["status"] == "TODO"
         payload = service.diet_analysis_payload()
         assert payload["meals"][0]["needs_estimate"] is True
+        assert payload["recorded_days"] == ["2026-09-13"]
+        assert payload["recorded_day_count"] == 1
+        assert payload["latest_weight_kg"] is None
+        assert payload["recent_weights"] == []
 
         review = service.save_diet_analysis(DietAnalysis(
             nutrition_estimates=[NutritionEstimate(
@@ -66,6 +71,24 @@ def test_gpt_estimate_is_validated_saved_and_reused(tmp_path):
         assert service.get_diet_review() is None
         prompts = {item["title"]: item for item in service.list_today_items()}
         assert prompts["주간 식단 평가"]["status"] == "TODO"
+    finally:
+        database.close()
+
+
+def test_diet_context_includes_dated_weights_and_portion_guard(tmp_path):
+    database = db.Database(tmp_path / "diet-context.db")
+    try:
+        service = DatabasePlanningService(database, now=SUNDAY)
+        service.save_meal_entry(MealEntryInput(
+            meal_type="LUNCH", food_name="밥 130g", eaten_on=SUNDAY.date()
+        ))
+        service.save_weight_record(WeightRecordInput(measured_on=SUNDAY.date(), weight_kg=72.4))
+        payload = service.diet_analysis_payload()
+        assert payload["latest_weight_kg"] == 72.4
+        assert payload["latest_weight_date"] == "2026-09-13"
+        assert payload["recent_weights"] == [{"date": "2026-09-13", "weight_kg": 72.4}]
+        assert "130 g cooked rice" in INSTRUCTIONS
+        assert "Missing dates or meals mean unknown intake" in INSTRUCTIONS
     finally:
         database.close()
 

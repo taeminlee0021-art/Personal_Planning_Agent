@@ -1,5 +1,6 @@
 """Transactional application services. Agent reads never perform plan writes."""
-from datetime import datetime, time, timedelta
+from calendar import monthrange
+from datetime import date, datetime, time, timedelta
 
 from app import database as db
 from app.errors import ConflictError
@@ -29,6 +30,19 @@ def today_json_row(row):
     if value.get("task_id") is not None:
         value["source"] = "TASK"
     return value
+
+
+def recurring_due(rule, item_date: date) -> bool:
+    start = rule["start_date"]
+    if item_date < start:
+        return False
+    if rule["cadence"] == "DAILY":
+        return True
+    if rule["cadence"] == "WEEKLY":
+        return item_date.weekday() in rule["weekdays"]
+    if rule["cadence"] == "MONTHLY":
+        return item_date.day == min(start.day, monthrange(item_date.year, item_date.month)[1])
+    return False
 
 
 class DatabasePlanningService:
@@ -71,16 +85,16 @@ class DatabasePlanningService:
         with self.database.transaction() as repository:
             return Task.model_validate(repository.get(db.tasks, identifier))
 
-    def add_task(self, title, minutes, priority="MEDIUM", count=1, *, description="", due_date=None, category="personal"):
+    def add_task(self, title, minutes, priority="MEDIUM", count=1, *, description="", start_date=None, due_date=None, category="personal"):
         now = self.current_time()
         task = Task(id=1, title=title, estimated_minutes=minutes, priority=priority,
                     weekly_target_count=count, created_at=now, updated_at=now,
-                    description=description, due_date=due_date, category=category)
+                    description=description, start_date=start_date, due_date=due_date, category=category)
         with self.database.transaction(write=True) as repository:
             return Task.model_validate(repository.insert(db.tasks, task.model_dump(exclude={"id"})))
 
     def update_task(self, identifier, **changes):
-        allowed = {"title", "description", "estimated_minutes", "priority", "due_date",
+        allowed = {"title", "description", "estimated_minutes", "priority", "start_date", "due_date",
                    "status", "category", "weekly_target_count"}
         if changes.keys() - allowed:
             raise ConflictError("Unsupported task field")
@@ -94,7 +108,7 @@ class DatabasePlanningService:
                     raise ConflictError("Task status must agree with saved plans")
             # Keep already saved blocks stable; user can explicitly edit/delete them first.
             if linked and any(task.model_dump()[key] != old[key] for key in
-                              ("estimated_minutes", "due_date", "weekly_target_count")):
+                              ("estimated_minutes", "start_date", "due_date", "weekly_target_count")):
                 raise ConflictError("Edit linked plans before changing duration, deadline or target")
             updated = Task.model_validate(repository.update(
                 db.tasks, identifier, task.model_dump(exclude={"id"})))
@@ -179,9 +193,7 @@ class DatabasePlanningService:
             )
         }
         for rule in repository.list(db.recurring_tasks, db.recurring_tasks.c.active.is_(True)):
-            due = item_date >= rule["start_date"] and (
-                rule["cadence"] == "DAILY" or item_date.weekday() in rule["weekdays"]
-            )
+            due = recurring_due(rule, item_date)
             if due and rule["id"] not in existing:
                 repository.insert(db.today_items, {
                     "title": rule["title"],
@@ -295,6 +307,8 @@ class DatabasePlanningService:
             task = repository.get(db.tasks, identifier)
             if task["status"] == "COMPLETED":
                 raise ConflictError("Completed task cannot be added to Today")
+            if task["start_date"] and now.date() < task["start_date"]:
+                raise ConflictError("Task has not reached its start date")
             existing = repository.list(
                 db.today_items,
                 db.today_items.c.item_date == now.date(),
@@ -535,12 +549,19 @@ class DatabasePlanningService:
             )
             if not meals:
                 raise ConflictError("이번 주에 기록된 식사가 없습니다.")
-            weights = sorted(repository.list(db.weight_records, db.weight_records.c.measured_on < week_end),
+            weights = sorted(repository.list(db.weight_records, db.weight_records.c.measured_on <= self.current_time().date()),
                              key=lambda item: item["measured_on"])
+            recorded_days = sorted({row["eaten_on"].isoformat() for row in meals})
             return {
                 "week_start": week_start.isoformat(),
+                "today": self.current_time().date().isoformat(),
+                "recorded_days": recorded_days,
+                "recorded_day_count": len(recorded_days),
                 "height_cm": repository.get(db.body_settings, 1)["height_cm"],
                 "latest_weight_kg": weights[-1]["weight_kg"] if weights else None,
+                "latest_weight_date": weights[-1]["measured_on"].isoformat() if weights else None,
+                "recent_weights": [{"date": row["measured_on"].isoformat(), "weight_kg": row["weight_kg"]}
+                                   for row in weights[-8:]],
                 "meals": [{
                     "entry_id": row["id"], "date": row["eaten_on"].isoformat(),
                     "meal_type": row["meal_type"], "food_name": row["food_name"],

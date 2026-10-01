@@ -30,7 +30,7 @@ Service = Annotated[DatabasePlanningService, Depends(service)]
 def create_task(value: TaskCreate, service: Service):
     return service.add_task(
         value.title, value.estimated_minutes, value.priority, value.weekly_target_count,
-        description=value.description, due_date=value.due_date, category=value.category,
+        description=value.description, start_date=value.start_date, due_date=value.due_date, category=value.category,
     )
 
 
@@ -46,7 +46,7 @@ def task(identifier: Identifier, service: Service):
 
 @router.put("/tasks/{identifier}", response_model=Task, tags=["Tasks"])
 def update_task(identifier: Identifier, value: TaskUpdate, service: Service):
-    """Update supplied fields only; explicit due_date=null clears the deadline."""
+    """Update supplied fields only; explicit date null clears that date."""
     return service.update_task(identifier, **value.model_dump(exclude_unset=True))
 
 

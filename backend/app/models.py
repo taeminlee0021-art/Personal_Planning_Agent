@@ -12,10 +12,17 @@ class TaskFields(Model):
     description: str = Field(default="", max_length=2000)
     estimated_minutes: int = Field(gt=0, le=120)
     priority: Literal["LOW", "MEDIUM", "HIGH"] = "MEDIUM"
+    start_date: date | None = None
     due_date: date | None = None
     status: Literal["TODO", "PLANNED", "COMPLETED"] = "TODO"
     category: str = Field(default="personal", max_length=120)
     weekly_target_count: int = Field(default=1, ge=1, le=7)
+
+    @model_validator(mode="after")
+    def valid_dates(self):
+        if self.start_date and self.due_date and self.start_date > self.due_date:
+            raise ValueError("Task start date must not be after its deadline")
+        return self
 
 
 class Task(TaskFields):

@@ -7,6 +7,7 @@ export interface Task {
   description: string
   estimated_minutes: number
   priority: Priority
+  start_date: string | null
   due_date: string | null
   status: TaskStatus
   category: string
@@ -49,7 +50,7 @@ export interface Preferences {
 export interface RecurringTask {
   id: number
   title: string
-  cadence: "DAILY" | "WEEKLY"
+  cadence: "DAILY" | "WEEKLY" | "MONTHLY"
   weekdays: number[]
   start_date: string
   active: boolean
@@ -138,6 +139,7 @@ export interface TaskDraft {
   description: string
   estimated_minutes: number
   priority: Priority
+  start_date: string | null
   due_date: string | null
   category: string
   weekly_target_count: number

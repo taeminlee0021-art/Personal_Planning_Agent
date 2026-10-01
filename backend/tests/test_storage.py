@@ -3,7 +3,7 @@ import sqlite3
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -18,7 +18,7 @@ from app.cli import menu
 from app.inputs import BodySettingsInput, ManualPlanInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
 from app.models import Proposal
 from app.planning import KST, Preferences
-from app.storage_service import DatabasePlanningService
+from app.storage_service import DatabasePlanningService, recurring_due
 from app.tools import NAMES, execute
 
 
@@ -125,6 +125,46 @@ def test_existing_recurring_table_gains_start_date_without_losing_rows(tmp_path)
         assert rows[0]["start_date"] == "2026-09-01"
     finally:
         database.close()
+
+
+def test_monthly_cadence_migration_keeps_recurring_history(tmp_path):
+    path = tmp_path / "old-cadence.db"
+    database = db.Database(path)
+    service = DatabasePlanningService(database, now=NOW)
+    rule = service.save_recurring_task(RecurringTaskInput(title="기존 매일", cadence="DAILY"))
+    history = service.list_today_items()[0]
+    database.close()
+
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA foreign_keys=OFF")
+    connection.execute("""CREATE TABLE recurring_tasks_old (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title VARCHAR(120) NOT NULL,
+        cadence VARCHAR(10) NOT NULL, weekdays JSON NOT NULL,
+        start_date DATE NOT NULL, active BOOLEAN NOT NULL,
+        created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+        CHECK (cadence IN ('DAILY', 'WEEKLY'))
+    )""")
+    connection.execute("""INSERT INTO recurring_tasks_old
+        SELECT id, title, cadence, weekdays, start_date, active, created_at, updated_at
+        FROM recurring_tasks""")
+    connection.execute("DROP TABLE recurring_tasks")
+    connection.execute("ALTER TABLE recurring_tasks_old RENAME TO recurring_tasks")
+    connection.commit()
+    connection.close()
+
+    reopened = db.Database(path)
+    try:
+        service = DatabasePlanningService(reopened, now=NOW)
+        assert service.list_recurring_tasks()[0]["id"] == rule["id"]
+        assert service.list_today_items()[0]["recurrence_id"] == rule["id"]
+        assert service.list_today_items()[0]["id"] == history["id"]
+        assert service.save_recurring_task(RecurringTaskInput(
+            title="새 매월", cadence="MONTHLY", start_date=NOW.date()
+        ))["cadence"] == "MONTHLY"
+        with reopened.engine.connect() as check:
+            assert check.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        reopened.close()
 
 
 def test_task_crud_and_id_not_reused(service):
@@ -242,6 +282,37 @@ def test_recurring_rule_starts_on_selected_date(service):
     service._now = NOW + timedelta(days=1)
     items = service.list_today_items()
     assert [item["title"] for item in items] == ["내일부터 스트레칭"]
+
+
+def test_monthly_rule_uses_start_day_and_short_month_end(service):
+    rule = service.save_recurring_task(RecurringTaskInput(
+        title="월말 정산", cadence="MONTHLY", start_date=date(2026, 1, 31)
+    ))
+    assert rule["cadence"] == "MONTHLY"
+    raw_rule = {"cadence": "MONTHLY", "start_date": date(2026, 1, 31), "weekdays": []}
+    assert recurring_due(raw_rule, date(2026, 1, 30)) is False
+    assert recurring_due(raw_rule, date(2026, 1, 31)) is True
+    assert recurring_due(raw_rule, date(2026, 2, 28)) is True
+    assert recurring_due(raw_rule, date(2026, 3, 30)) is False
+    assert recurring_due(raw_rule, date(2026, 3, 31)) is True
+    service._now = datetime(2026, 2, 28, 8, tzinfo=KST)
+    assert [item["title"] for item in service.list_today_items()] == ["월말 정산"]
+    assert len(service.list_today_items()) == 1
+
+
+def test_task_start_date_blocks_early_today_and_plans(service):
+    task = service.add_task("다음 주 준비", 60, start_date=date(2026, 9, 8),
+                            due_date=date(2026, 9, 10))
+    assert task.start_date == date(2026, 9, 8)
+    with pytest.raises(ValueError, match="start date"):
+        service.save_manual_plan(plan(task.id))
+    with pytest.raises(ValueError, match="start date"):
+        service.create_today_item_from_task(task.id)
+    service._now = NOW + timedelta(days=1)
+    assert service.create_today_item_from_task(task.id)["task_id"] == task.id
+    assert service.update_task(task.id, start_date=None).start_date is None
+    with pytest.raises(ValidationError):
+        service.update_task(task.id, start_date=date(2026, 9, 11))
 
 
 def test_recurring_rule_without_start_date_defaults_to_korean_today(service):

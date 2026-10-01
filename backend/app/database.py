@@ -43,6 +43,7 @@ tasks = Table(
     Column("description", String(2000), nullable=False),
     Column("estimated_minutes", Integer, nullable=False),
     Column("priority", String(10), nullable=False),
+    Column("start_date", Date),
     Column("due_date", Date),
     Column("status", String(12), nullable=False),
     Column("category", String(120), nullable=False),
@@ -124,7 +125,7 @@ recurring_tasks = Table(
     Column("active", Boolean, nullable=False),
     Column("created_at", UTCDateTime(), nullable=False),
     Column("updated_at", UTCDateTime(), nullable=False),
-    CheckConstraint("cadence IN ('DAILY', 'WEEKLY')"),
+    CheckConstraint("cadence IN ('DAILY', 'WEEKLY', 'MONTHLY')", name="ck_recurring_tasks_cadence"),
     sqlite_autoincrement=True,
 )
 
@@ -250,6 +251,11 @@ class Database:
                 connection.execute("PRAGMA foreign_keys=ON")
 
         metadata.create_all(self.engine)
+        if "tasks" in inspect(self.engine).get_table_names():
+            task_columns = {column["name"] for column in inspect(self.engine).get_columns("tasks")}
+            if "start_date" not in task_columns:
+                with self.engine.begin() as connection:
+                    connection.exec_driver_sql("ALTER TABLE tasks ADD COLUMN start_date DATE")
         if "schedules" in inspect(self.engine).get_table_names():
             schedule_columns = {
                 column["name"] for column in inspect(self.engine).get_columns("schedules")
@@ -273,6 +279,7 @@ class Database:
                         "UPDATE recurring_tasks SET start_date = "
                         + ("date(created_at)" if self.is_sqlite else "CAST(created_at AS DATE)")
                     )
+            self._migrate_monthly_cadence()
         if self.is_sqlite and "today_items" in inspect(self.engine).get_table_names():
             columns = {column["name"] for column in inspect(self.engine).get_columns("today_items")}
             with self.engine.begin() as connection:
@@ -302,6 +309,64 @@ class Database:
                     "CREATE UNIQUE INDEX IF NOT EXISTS uq_today_items_task_date "
                     "ON today_items (task_id, item_date) WHERE task_id IS NOT NULL"
                 )
+
+    def _migrate_monthly_cadence(self):
+        checks = inspect(self.engine).get_check_constraints("recurring_tasks")
+        old_checks = [check for check in checks if "cadence" in (check["sqltext"] or "").lower()
+                      and "MONTHLY" not in (check["sqltext"] or "").upper()]
+        if not old_checks:
+            return
+        if self.is_sqlite:
+            # SQLite cannot alter a CHECK constraint. Rebuild only this table while
+            # keeping its IDs so existing Today history retains its foreign keys.
+            raw = self.engine.raw_connection()
+            try:
+                cursor = raw.cursor()
+                cursor.execute("PRAGMA foreign_keys=OFF")
+                cursor.execute("BEGIN IMMEDIATE")
+                try:
+                    cursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'recurring_tasks'")
+                    previous_sequence = cursor.fetchone()
+                    cursor.execute("""CREATE TABLE recurring_tasks_monthly (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title VARCHAR(120) NOT NULL,
+                        cadence VARCHAR(10) NOT NULL,
+                        weekdays JSON NOT NULL,
+                        start_date DATE NOT NULL,
+                        active BOOLEAN NOT NULL,
+                        created_at DATETIME NOT NULL,
+                        updated_at DATETIME NOT NULL,
+                        CONSTRAINT ck_recurring_tasks_cadence
+                        CHECK (cadence IN ('DAILY', 'WEEKLY', 'MONTHLY'))
+                    )""")
+                    cursor.execute("""INSERT INTO recurring_tasks_monthly
+                        (id, title, cadence, weekdays, start_date, active, created_at, updated_at)
+                        SELECT id, title, cadence, weekdays, start_date, active, created_at, updated_at
+                        FROM recurring_tasks""")
+                    cursor.execute("DROP TABLE recurring_tasks")
+                    cursor.execute("ALTER TABLE recurring_tasks_monthly RENAME TO recurring_tasks")
+                    if previous_sequence:
+                        cursor.execute("UPDATE sqlite_sequence SET seq = MAX(seq, ?) "
+                                       "WHERE name = 'recurring_tasks'", (previous_sequence[0],))
+                    cursor.execute("PRAGMA foreign_key_check")
+                    if cursor.fetchone() is not None:
+                        raise ValueError("Recurring task migration would break a foreign key")
+                    raw.commit()
+                except BaseException:
+                    raw.rollback()
+                    raise
+            finally:
+                raw.execute("PRAGMA foreign_keys=ON")
+                raw.close()
+        else:
+            with self.engine.begin() as connection:
+                for check in old_checks:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE recurring_tasks DROP CONSTRAINT "
+                        + connection.dialect.identifier_preparer.quote(check["name"])
+                    )
+                connection.exec_driver_sql("ALTER TABLE recurring_tasks ADD CONSTRAINT "
+                    "ck_recurring_tasks_cadence CHECK (cadence IN ('DAILY', 'WEEKLY', 'MONTHLY'))")
 
     @contextmanager
     def transaction(self, *, write=False):

@@ -20,13 +20,18 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
   function changeOpen(nextOpen: boolean) {
     if (nextOpen) setDraft(task ? {
       title: task.title, description: task.description, estimated_minutes: task.estimated_minutes,
-      priority: task.priority, due_date: task.due_date, category: task.category, weekly_target_count: task.weekly_target_count,
+      priority: task.priority, start_date: task.start_date, due_date: task.due_date, category: task.category, weekly_target_count: task.weekly_target_count,
     } : emptyTask)
     setOpen(nextOpen)
   }
 
   async function save(event: FormEvent) {
-    event.preventDefault(); setSaving(true)
+    event.preventDefault()
+    if (draft.start_date && draft.due_date && draft.start_date > draft.due_date) {
+      toast.error("시작일은 마감일보다 늦을 수 없습니다.")
+      return
+    }
+    setSaving(true)
     try {
       if (task) await api.updateTask(task.id, draft)
       else await api.createTask(draft)
@@ -47,8 +52,9 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
           <label className="grid gap-1.5 text-sm font-medium">예상 시간(분)<Input required type="number" min={1} max={120} value={draft.estimated_minutes} onChange={(e) => setDraft({ ...draft, estimated_minutes: Number(e.target.value) })} /></label>
           <label className="grid gap-1.5 text-sm font-medium">계획 횟수<Input required type="number" min={1} max={7} value={draft.weekly_target_count} onChange={(e) => setDraft({ ...draft, weekly_target_count: Number(e.target.value) })} /></label>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="grid gap-1.5 text-sm font-medium">우선순위<Select value={draft.priority} onValueChange={(value) => setDraft({ ...draft, priority: value as Priority })}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">낮음</SelectItem><SelectItem value="MEDIUM">보통</SelectItem><SelectItem value="HIGH">높음</SelectItem></SelectContent></Select></label>
+          <label className="grid gap-1.5 text-sm font-medium">시작일<Input type="date" value={draft.start_date || ""} onChange={(e) => setDraft({ ...draft, start_date: e.target.value || null })} /></label>
           <label className="grid gap-1.5 text-sm font-medium">마감일<Input type="date" value={draft.due_date || ""} onChange={(e) => setDraft({ ...draft, due_date: e.target.value || null })} /></label>
         </div>
         <label className="grid gap-1.5 text-sm font-medium">카테고리<Input maxLength={120} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="personal" /></label>

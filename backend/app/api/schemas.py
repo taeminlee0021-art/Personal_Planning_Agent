@@ -17,6 +17,7 @@ class TaskUpdate(Model):
     description: str | None = Field(default=None, max_length=2000)
     estimated_minutes: int | None = Field(default=None, gt=0, le=120)
     priority: Literal["LOW", "MEDIUM", "HIGH"] | None = None
+    start_date: date | None = None
     due_date: date | None = None
     status: Literal["TODO", "PLANNED", "COMPLETED"] | None = None
     category: str | None = Field(default=None, max_length=120)
@@ -26,8 +27,8 @@ class TaskUpdate(Model):
     def validate_changes(self):
         if not self.model_fields_set:
             raise ValueError("Supply at least one field")
-        if any(getattr(self, field) is None for field in self.model_fields_set - {"due_date"}):
-            raise ValueError("Only due_date may be null")
+        if any(getattr(self, field) is None for field in self.model_fields_set - {"start_date", "due_date"}):
+            raise ValueError("Only dates may be null")
         return self
 
 

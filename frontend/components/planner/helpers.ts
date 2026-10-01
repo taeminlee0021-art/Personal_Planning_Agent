@@ -4,7 +4,7 @@ export type View = "today" | "tasks" | "week" | "weight" | "agent" | "settings"
 
 export const emptyTask: TaskDraft = {
   title: "", description: "", estimated_minutes: 60, priority: "MEDIUM",
-  due_date: null, category: "personal", weekly_target_count: 1,
+  start_date: null, due_date: null, category: "personal", weekly_target_count: 1,
 }
 
 export const emptySchedule: ScheduleDraft = {
@@ -24,6 +24,18 @@ export const priorityStyle: Record<Priority, string> = {
 
 export function dateKey(value: string | Date) {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value))
+}
+
+export function recurringOnDate(item: { cadence: "DAILY" | "WEEKLY" | "MONTHLY"; weekdays: number[]; start_date: string }, day: string) {
+  if (day < item.start_date) return false
+  if (item.cadence === "DAILY") return true
+  if (item.cadence === "WEEKLY") {
+    const weekday = (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7
+    return item.weekdays.includes(weekday)
+  }
+  const [year, month, dayOfMonth] = day.split("-").map(Number)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return dayOfMonth === Math.min(Number(item.start_date.slice(8, 10)), lastDay)
 }
 
 export function weekDays() {
