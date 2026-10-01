@@ -1687,3 +1687,15 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   October 1. This release changes frontend behavior only; no backend schema,
   migration or production data writes are needed. Production latency after
   deployment remains to be measured.
+- The optimized frontend was committed to GitHub main as `d83f771` and pushed.
+  The corresponding Sites source commit is `b0f06c8`.
+- Sites version 7 was saved from the tested Vinext build and published to the
+  existing owner-private project. Deployment `appgdep_6abdf0314fa881918dd58305a3619be2`
+  succeeded at the original production URL. Site access remained owner-only.
+- A fresh browser tab reached the deployed page and loaded existing production
+  task data after the free Render backend woke. No production records were
+  created, changed or deleted during deployment verification. The Render
+  backend was not redeployed for this frontend-only release.
+- The first backend `/health` check timed out at 25 seconds during wake-up;
+  the frontend subsequently loaded. Button-save latency in production still
+  needs user observation after the new client bundle is refreshed.
