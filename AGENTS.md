@@ -1723,3 +1723,13 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   warnings; frontend tsc and ESLint passed. Browser check confirmed generation,
   muscle selection, day move persistence and 375px layout without horizontal
   scroll. No paid OpenAI call was made; real workout-AI output is untested.
+- The user authorized deployment on October 2. The commit was rebased onto
+  upstream `fd33320` (monthly repeats, mutation-response UI updates, diet-review
+  context) and pushed to GitHub main as `d25cef7`; 217 backend tests, tsc,
+  ESLint and the Vinext production build passed on the merged code.
+- Render did not auto-deploy the push. A manual latest-commit deploy of
+  `d25cef7` on `personal-planning-agent-api-64ij` succeeded; production health
+  returned 200 and OpenAPI lists the workout-settings and workouts endpoints.
+  New tables are created on startup; no production records were written.
+- Sites frontend publishing is pending: this Claude Code session has no Sites
+  publishing tool, so the owner must publish `frontend/` from GitHub main.
