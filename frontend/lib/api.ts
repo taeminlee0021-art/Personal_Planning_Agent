@@ -1,4 +1,4 @@
-import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek } from "@/lib/types"
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -56,6 +56,13 @@ export const api = {
   deleteMealEntry: (id: number) => request<void>(`/body/meals/${id}`, { method: "DELETE" }),
   currentDietReview: () => request<DietReview | null>("/body/diet-review/current"),
   analyzeDiet: () => request<DietReview>("/body/diet-review/current/analyze", { method: "POST", body: "{}" }),
+  workoutSettings: () => request<WorkoutSettings>("/body/workout-settings"),
+  updateWorkoutSettings: (value: WorkoutSettings) => request<WorkoutSettings>("/body/workout-settings", { method: "PUT", body: JSON.stringify(value) }),
+  workoutWeek: () => request<WorkoutWeek>("/body/workouts/week"),
+  planWorkoutWeek: () => request<WorkoutWeek>("/body/workouts/week/plan", { method: "POST", body: "{}" }),
+  createWorkoutSession: (value: WorkoutSessionDraft) => request<WorkoutSession>("/body/workouts", { method: "POST", body: JSON.stringify(value) }),
+  updateWorkoutSession: (id: number, value: WorkoutSessionDraft) => request<WorkoutSession>(`/body/workouts/${id}`, { method: "PUT", body: JSON.stringify(value) }),
+  deleteWorkoutSession: (id: number) => request<void>(`/body/workouts/${id}`, { method: "DELETE" }),
   saveWeightRecord: (weight_kg: number, measured_on: string) => request<WeightRecord>("/body/weights", { method: "POST", body: JSON.stringify({ weight_kg, measured_on }) }),
   preferences: () => request<Preferences>("/preferences"),
   updatePreferences: (value: Omit<Preferences, "timezone">) => request<Preferences>("/preferences", { method: "PUT", body: JSON.stringify(value) }),

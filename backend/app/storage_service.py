@@ -4,8 +4,9 @@ from datetime import date, datetime, time, timedelta
 
 from app import database as db
 from app.errors import ConflictError
-from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput
 from app.diet import DietAnalysis
+from app.workout import MUSCLE_GROUP_LABELS, WorkoutPlan
 from app.models import Proposal, Task
 from app.planning import KST, PlanBlock, Preferences, TimeRange, aware, daily_minutes, validate_plan
 from app.services import PlanningSnapshot
@@ -56,6 +57,8 @@ class DatabasePlanningService:
                 repository.insert(db.preferences, {"id": 1, **Preferences().model_dump()})
             if not repository.list(db.body_settings):
                 repository.insert(db.body_settings, {"id": 1, "height_cm": 176.0})
+            if not repository.list(db.workout_settings):
+                repository.insert(db.workout_settings, {"id": 1, **WorkoutSettingsInput().model_dump()})
 
     def current_time(self):
         return self._now if self._now is not None else datetime.now(KST)
@@ -568,6 +571,15 @@ class DatabasePlanningService:
                     "calories_kcal": row["calories_kcal"], "protein_g": row["protein_g"],
                     "needs_estimate": row["calories_kcal"] is None or row["protein_g"] is None,
                 } for row in meals],
+                "workouts": [{
+                    "date": row["session_date"].isoformat(),
+                    "strength_focus": [MUSCLE_GROUP_LABELS[group] for group in row["muscle_groups"]],
+                    "strength_minutes": row["strength_minutes"],
+                    "cardio_minutes": row["cardio_minutes"],
+                    "completed": row["completed"],
+                } for row in sorted(repository.list(
+                    db.workout_sessions, db.workout_sessions.c.week_start == week_start,
+                ), key=lambda item: item["session_date"])],
             }
 
     def save_diet_analysis(self, analysis: DietAnalysis):
@@ -634,6 +646,163 @@ class DatabasePlanningService:
                     "status": "COMPLETED", "completion_count": 1, "updated_at": now,
                 })
             return json_row(review)
+
+    @staticmethod
+    def _workout_settings(repository):
+        row = repository.get(db.workout_settings, 1)
+        row.pop("id")
+        return row
+
+    def get_workout_settings(self):
+        with self.database.transaction() as repository:
+            return self._workout_settings(repository)
+
+    def save_workout_settings(self, value: WorkoutSettingsInput):
+        """Applies to weeks generated later; the current week keeps its sessions."""
+        value = WorkoutSettingsInput.model_validate(value.model_dump())
+        with self.database.transaction(write=True) as repository:
+            repository.update(db.workout_settings, 1, value.model_dump())
+            return self._workout_settings(repository)
+
+    def _ensure_workout_week(self, repository, week_start):
+        weeks = repository.list(db.workout_weeks, db.workout_weeks.c.week_start == week_start)
+        if weeks:
+            return weeks[0]
+        now = self.current_time()
+        week = repository.insert(db.workout_weeks, {
+            "week_start": week_start, "summary": None, "planned_at": None, "created_at": now,
+        })
+        settings = self._workout_settings(repository)
+        for weekday in settings["weekdays"]:
+            session_date = week_start + timedelta(days=weekday)
+            if not repository.list(db.workout_sessions, db.workout_sessions.c.session_date == session_date):
+                repository.insert(db.workout_sessions, self._new_session(
+                    week_start, session_date, settings, now))
+        return week
+
+    @staticmethod
+    def _new_session(week_start, session_date, settings, now):
+        return {
+            "week_start": week_start, "session_date": session_date, "muscle_groups": [],
+            "focus_source": "NONE", "note": "", "completed": False,
+            "strength_minutes": settings["strength_minutes"],
+            "cardio_minutes": settings["cardio_minutes"],
+            "created_at": now, "updated_at": now,
+        }
+
+    def _workout_week_json(self, repository, week_start):
+        week = self._ensure_workout_week(repository, week_start)
+        sessions = repository.list(db.workout_sessions, db.workout_sessions.c.week_start == week_start)
+        return {
+            "week_start": week_start.isoformat(),
+            "summary": week["summary"],
+            "planned_at": aware(week["planned_at"]).isoformat() if week["planned_at"] else None,
+            "sessions": [json_row(row) for row in sorted(sessions, key=lambda item: item["session_date"])],
+        }
+
+    def get_workout_week(self):
+        week_start, _ = self._week_dates()
+        with self.database.transaction(write=True) as repository:
+            return self._workout_week_json(repository, week_start)
+
+    def _check_session_date(self, repository, session_date, week_start, identifier=None):
+        if not week_start <= session_date < week_start + timedelta(days=7):
+            raise ConflictError("운동은 같은 주(월~일) 안에서만 옮길 수 있습니다.")
+        clash = repository.list(db.workout_sessions, db.workout_sessions.c.session_date == session_date)
+        if any(row["id"] != identifier for row in clash):
+            raise ConflictError("그 날짜에는 이미 운동이 있습니다.")
+
+    def create_workout_session(self, value: WorkoutSessionInput):
+        value = WorkoutSessionInput.model_validate(value.model_dump())
+        week_start, _ = self._week_dates()
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            self._ensure_workout_week(repository, week_start)
+            self._check_session_date(repository, value.session_date, week_start)
+            row = self._new_session(week_start, value.session_date, self._workout_settings(repository), now)
+            row.update({
+                "muscle_groups": value.muscle_groups, "note": value.note, "completed": value.completed,
+                "focus_source": "MANUAL" if value.muscle_groups else "NONE",
+            })
+            return json_row(repository.insert(db.workout_sessions, row))
+
+    def update_workout_session(self, identifier, value: WorkoutSessionInput):
+        value = WorkoutSessionInput.model_validate(value.model_dump())
+        with self.database.transaction(write=True) as repository:
+            current = repository.get(db.workout_sessions, identifier)
+            self._check_session_date(repository, value.session_date, current["week_start"], identifier)
+            focus_source = current["focus_source"]
+            if not value.muscle_groups:
+                focus_source = "NONE"
+            elif value.muscle_groups != current["muscle_groups"] or value.note != current["note"]:
+                focus_source = "MANUAL"
+            return json_row(repository.update(db.workout_sessions, identifier, {
+                "session_date": value.session_date, "muscle_groups": value.muscle_groups,
+                "note": value.note, "completed": value.completed,
+                "focus_source": focus_source, "updated_at": self.current_time(),
+            }))
+
+    def delete_workout_session(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            repository.delete(db.workout_sessions, identifier)
+
+    def workout_plan_payload(self):
+        week_start, _ = self._week_dates()
+        history_start = week_start - timedelta(weeks=8)
+        weekdays = "월화수목금토일"
+        with self.database.transaction(write=True) as repository:
+            self._ensure_workout_week(repository, week_start)
+            current = sorted(repository.list(
+                db.workout_sessions, db.workout_sessions.c.week_start == week_start,
+            ), key=lambda item: item["session_date"])
+            to_plan = [row for row in current if not row["completed"] and row["focus_source"] != "MANUAL"]
+            if not to_plan:
+                raise ConflictError("부위를 정할 미완료 운동이 없습니다.")
+            history = sorted(repository.list(
+                db.workout_sessions,
+                db.workout_sessions.c.session_date >= history_start,
+                db.workout_sessions.c.session_date < week_start,
+            ), key=lambda item: item["session_date"])
+            weights = sorted(repository.list(db.weight_records), key=lambda item: item["measured_on"])
+
+            def describe(row):
+                return {"date": row["session_date"].isoformat(),
+                        "weekday": weekdays[row["session_date"].weekday()],
+                        "muscle_groups": row["muscle_groups"]}
+
+            settings = self._workout_settings(repository)
+            return {
+                "week_start": week_start.isoformat(),
+                "strength_minutes": settings["strength_minutes"],
+                "cardio_minutes": settings["cardio_minutes"],
+                "muscle_group_options": MUSCLE_GROUP_LABELS,
+                "sessions_to_plan": [{"session_id": row["id"], **describe(row)} for row in to_plan],
+                "fixed_sessions": [{**describe(row), "completed": row["completed"]}
+                                   for row in current if row not in to_plan],
+                "history": [{**describe(row), "completed": row["completed"]} for row in history],
+                "height_cm": repository.get(db.body_settings, 1)["height_cm"],
+                "latest_weight_kg": weights[-1]["weight_kg"] if weights else None,
+            }
+
+    def save_workout_plan(self, plan: WorkoutPlan):
+        plan = WorkoutPlan.model_validate(plan)
+        week_start, _ = self._week_dates()
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            week = self._ensure_workout_week(repository, week_start)
+            current = repository.list(db.workout_sessions, db.workout_sessions.c.week_start == week_start)
+            expected = {row["id"] for row in current
+                        if not row["completed"] and row["focus_source"] != "MANUAL"}
+            if {item.session_id for item in plan.assignments} != expected:
+                raise ConflictError("운동 일정이 변경되었습니다. 다시 요청해 주세요.")
+            for item in plan.assignments:
+                repository.update(db.workout_sessions, item.session_id, {
+                    "muscle_groups": item.muscle_groups, "note": item.note,
+                    "focus_source": "AI", "updated_at": now,
+                })
+            repository.update(db.workout_weeks, week["id"], {"summary": plan.summary, "planned_at": now})
+            return self._workout_week_json(repository, week_start)
+
     def get_preferences(self):
         with self.database.transaction() as repository:
             pref = repository.get(db.preferences, 1)

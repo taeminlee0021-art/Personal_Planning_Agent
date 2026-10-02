@@ -4,14 +4,14 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 import { CalendarDays, ListTodo, LoaderCircle, MessageCircleMore, RotateCcw, Scale, Settings2, Sparkles, SunMedium } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek } from "@/lib/types"
 import { dateKey, defaultPreferences, emptyTask, formatDate, weekDays, type View } from "@/components/planner/helpers"
 import { TodayView } from "@/components/planner/today-view"
 import { TasksView } from "@/components/planner/tasks-view"
 import { WeekView } from "@/components/planner/week-view"
 import { AgentView } from "@/components/planner/agent-view"
 import { SettingsView } from "@/components/planner/settings-view"
-import { WeightView } from "@/components/planner/weight-view"
+import { WeightView, type HealthTab } from "@/components/planner/weight-view"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Toaster } from "@/components/ui/sonner"
@@ -26,8 +26,8 @@ const navigation: { id: View; label: string; icon: typeof SunMedium }[] = [
   { id: "settings", label: "설정", icon: Settings2 },
 ]
 
-type RefreshPart = "tasks" | "todayPlans" | "weekPlans" | "schedules" | "preferences" | "actions" | "recurring" | "todayItems" | "weekTodayItems" | "bodySettings" | "weights" | "meals" | "foods" | "dietReview"
-const allParts: RefreshPart[] = ["tasks", "todayPlans", "weekPlans", "schedules", "preferences", "actions", "recurring", "todayItems", "weekTodayItems", "bodySettings", "weights", "meals", "foods", "dietReview"]
+type RefreshPart = "tasks" | "todayPlans" | "weekPlans" | "schedules" | "preferences" | "actions" | "recurring" | "todayItems" | "weekTodayItems" | "bodySettings" | "weights" | "meals" | "foods" | "dietReview" | "workoutWeek" | "workoutSettings"
+const allParts: RefreshPart[] = ["tasks", "todayPlans", "weekPlans", "schedules", "preferences", "actions", "recurring", "todayItems", "weekTodayItems", "bodySettings", "weights", "meals", "foods", "dietReview", "workoutWeek", "workoutSettings"]
 
 function upsertById<T extends { id: number }>(current: T[], saved: T): T[] {
   return current.some((item) => item.id === saved.id)
@@ -51,6 +51,9 @@ export function PlannerApp() {
   const [mealEntries, setMealEntries] = useState<MealEntry[]>([])
   const [foodNutrition, setFoodNutrition] = useState<FoodNutrition[]>([])
   const [dietReview, setDietReview] = useState<DietReview | null>(null)
+  const [workoutWeek, setWorkoutWeek] = useState<WorkoutWeek | null>(null)
+  const [workoutSettings, setWorkoutSettings] = useState<WorkoutSettings>({ weekdays: [0, 2, 4, 6], strength_minutes: 30, cardio_minutes: 30 })
+  const [healthTab, setHealthTab] = useState<HealthTab>("workout")
   const [loading, setLoading] = useState(true)
   const [serverState, setServerState] = useState<"checking" | "ready" | "failed">("checking")
   const [loadError, setLoadError] = useState("")
@@ -77,6 +80,8 @@ export function PlannerApp() {
         parts.includes("meals") && api.mealEntries().then(setMealEntries),
         parts.includes("foods") && api.foodNutrition().then(setFoodNutrition),
         parts.includes("dietReview") && api.currentDietReview().then(setDietReview),
+        parts.includes("workoutWeek") && api.workoutWeek().then(setWorkoutWeek),
+        parts.includes("workoutSettings") && api.workoutSettings().then(setWorkoutSettings),
       ])
       setLoadError("")
     } catch (error) { setLoadError(error instanceof Error ? error.message : "데이터를 불러오지 못했습니다.") }
@@ -171,14 +176,16 @@ export function PlannerApp() {
     const recurringTarget = recurringTasks.filter((item) => item.active).reduce((count, item) =>
       count + days.filter((day, index) => day >= item.start_date && (item.cadence === "DAILY" || item.weekdays.includes(index))).length, 0)
     const weeklySchedules = schedules.filter((item) => days.includes(dateKey(item.start_datetime)))
+    const workouts = workoutWeek?.sessions ?? []
     return {
-      target: weekPlans.length + weeklySchedules.length + unmatchedChecklist.length + recurringTarget,
+      target: weekPlans.length + weeklySchedules.length + unmatchedChecklist.length + recurringTarget + workouts.length,
       completed: weekPlans.filter((plan) => plan.status === "COMPLETED").length
         + weeklySchedules.filter((item) => item.completed).length
         + unmatchedChecklist.filter((item) => item.status === "COMPLETED").length
-        + weekTodayItems.filter((item) => item.source === "RECURRING" && item.status === "COMPLETED").length,
+        + weekTodayItems.filter((item) => item.source === "RECURRING" && item.status === "COMPLETED").length
+        + workouts.filter((item) => item.completed).length,
     }
-  }, [recurringTasks, schedules, weekPlans, weekTodayItems])
+  }, [recurringTasks, schedules, weekPlans, weekTodayItems, workoutWeek])
 
   async function toggleTask(task: Task) {
     try {
@@ -279,6 +286,30 @@ export function PlannerApp() {
     }
     catch (error) { toast.error(error instanceof Error ? error.message : "식단을 삭제하지 못했습니다.") }
   }
+  async function saveWorkout(id: number, value: WorkoutSessionDraft) {
+    try { await api.updateWorkoutSession(id, value); await refresh(["workoutWeek"]) }
+    catch (error) { toast.error(error instanceof Error ? error.message : "운동을 저장하지 못했습니다.") }
+  }
+  async function toggleWorkout(session: WorkoutSession) {
+    await saveWorkout(session.id, { session_date: session.session_date, muscle_groups: session.muscle_groups, note: session.note, completed: !session.completed })
+  }
+  async function addWorkout(value: WorkoutSessionDraft) {
+    try { await api.createWorkoutSession(value); await refresh(["workoutWeek"]); toast.success("운동을 추가했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "운동을 추가하지 못했습니다.") }
+  }
+  async function removeWorkout(id: number) {
+    try { await api.deleteWorkoutSession(id); await refresh(["workoutWeek"]); toast.success("운동을 삭제했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "운동을 삭제하지 못했습니다.") }
+  }
+  async function planWorkouts() {
+    try { setWorkoutWeek(await api.planWorkoutWeek()); toast.success("이번 주 운동 부위를 짰습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "운동 부위를 짜지 못했습니다.") }
+  }
+  async function saveWorkoutSettings(value: WorkoutSettings) {
+    try { setWorkoutSettings(await api.updateWorkoutSettings(value)); toast.success("기본 운동 요일을 저장했습니다. 다음 주부터 적용됩니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "운동 기본값을 저장하지 못했습니다.") }
+  }
+  function openHealth(tab: HealthTab) { setHealthTab(tab); setView("weight") }
   async function analyzeDiet() {
     try { setDietReview(await api.analyzeDiet()); void refresh(["todayItems", "weekTodayItems"]); toast.success("이번 주 식단 평가를 완료했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "식단을 평가하지 못했습니다."); throw error }
@@ -333,10 +364,10 @@ export function PlannerApp() {
       {loading && serverState === "checking" && <div role="status" aria-live="polite" className="mx-5 mt-5 flex items-center gap-3 rounded-xl border border-[#C9D8D0] bg-[#F2F8F4] px-4 py-3 text-sm text-[#315B4D] md:mx-9"><LoaderCircle className="size-5 shrink-0 animate-spin" /><div><p className="font-semibold">서버를 준비하는 중입니다</p><p className="mt-0.5 text-[#63756E]">무료 서버가 다시 시작되는 데 최대 1~2분 정도 걸릴 수 있습니다. 이 화면에서 잠시 기다려 주세요.</p></div></div>}
       {loadError && <div role="alert" className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-[#E7C9C0] bg-[#FFF5F1] px-4 py-3 text-sm text-[#8A4634] md:mx-9"><span>{loadError}</span><Button variant="ghost" size="sm" onClick={() => void initialize()}><RotateCcw />다시 시도</Button></div>}
       <div className="mx-auto w-full max-w-7xl p-5 md:p-9">
-        {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} openWeight={() => setView("weight")} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
+        {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} workouts={(workoutWeek?.sessions ?? []).filter((item) => item.session_date === dateKey(new Date()))} toggleWorkout={toggleWorkout} openHealth={openHealth} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
         {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} onTaskSaved={onTaskSaved} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}
-        {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} onScheduleSaved={onScheduleSaved} removeSchedule={removeSchedule} />}
-        {view === "weight" && <WeightView key={bodySettings.height_cm} loading={loading} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
+        {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} workouts={workoutWeek?.sessions ?? []} onScheduleSaved={onScheduleSaved} removeSchedule={removeSchedule} />}
+        {view === "weight" && <WeightView key={bodySettings.height_cm} loading={loading} tab={healthTab} onTabChange={setHealthTab} workoutWeek={workoutWeek} workoutSettings={workoutSettings} saveWorkout={saveWorkout} addWorkout={addWorkout} removeWorkout={removeWorkout} planWorkouts={planWorkouts} saveWorkoutSettings={saveWorkoutSettings} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
         {view === "agent" && <AgentView loading={loading} message={message} setMessage={setMessage} sending={sending} agentError={agentError} latestResponse={latestResponse} actions={actions} deciding={deciding} sendMessage={sendMessage} decide={decide} />}
         {view === "settings" && <SettingsView loading={loading} recurringTasks={recurringTasks} preferences={preferences} setPreferences={setPreferences} onRecurringSaved={onRecurringSaved} toggleRecurringTask={toggleRecurringTask} removeRecurringTask={removeRecurringTask} savePreferences={savePreferences} />}
       </div>

@@ -1,9 +1,10 @@
 "use client"
 
 import { FormEvent, useMemo, useState } from "react"
-import { Activity, CalendarDays, Flame, LoaderCircle, Ruler, Save, Scale, Sparkles, Trash2, Utensils } from "lucide-react"
+import { Activity, CalendarDays, Dumbbell, Flame, LoaderCircle, Ruler, Save, Scale, Sparkles, Trash2, Utensils } from "lucide-react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
-import type { BodySettings, DietReview, FoodNutrition, MealDraft, MealEntry, MealType, WeightRecord } from "@/lib/types"
+import type { BodySettings, DietReview, FoodNutrition, MealDraft, MealEntry, MealType, WeightRecord, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek } from "@/lib/types"
+import { WorkoutPanel } from "@/components/planner/workout-panel"
 import { dateKey, formatDate } from "@/components/planner/helpers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,7 +30,18 @@ function nutrition(value: number | null, unit: string) {
   return value === null ? "계산 전" : `${Math.round(value * 10) / 10}${unit}`
 }
 
-export function WeightView({ loading, settings, records, meals, foods, review, saveWeight, saveHeight, saveMeal, removeMeal, analyzeDiet }: {
+export type HealthTab = "workout" | "diet" | "weight"
+
+export function WeightView({ loading, tab, onTabChange, settings, records, meals, foods, review, workoutWeek, workoutSettings, saveWeight, saveHeight, saveMeal, removeMeal, analyzeDiet, saveWorkout, addWorkout, removeWorkout, planWorkouts, saveWorkoutSettings }: {
+  tab: HealthTab
+  onTabChange: (tab: HealthTab) => void
+  workoutWeek: WorkoutWeek | null
+  workoutSettings: WorkoutSettings
+  saveWorkout: (id: number, value: WorkoutSessionDraft) => Promise<void>
+  addWorkout: (value: WorkoutSessionDraft) => Promise<void>
+  removeWorkout: (id: number) => Promise<void>
+  planWorkouts: () => Promise<void>
+  saveWorkoutSettings: (value: WorkoutSettings) => Promise<void>
   loading: boolean
   settings: BodySettings
   records: WeightRecord[]
@@ -104,9 +116,11 @@ export function WeightView({ loading, settings, records, meals, foods, review, s
   if (loading) return <LoadingCards />
 
   return <section aria-labelledby="health-heading">
-    <div className="mb-6"><p className="mb-1 text-sm font-semibold text-[#356859]">HEALTH LOG</p><h2 id="health-heading" className="text-2xl font-bold tracking-tight md:text-3xl">건강 기록</h2><p className="mt-2 text-sm text-[#74807A]">매일 식사를 기록하고, 일요일에 한 주 식단과 몸무게 흐름을 함께 확인하세요.</p></div>
-    <Tabs defaultValue="diet" className="gap-5">
-      <TabsList className="h-11 w-full max-w-sm rounded-xl bg-[#E8EEEA] p-1"><TabsTrigger value="diet" className="rounded-lg"><Utensils />식단</TabsTrigger><TabsTrigger value="weight" className="rounded-lg"><Scale />몸무게</TabsTrigger></TabsList>
+    <div className="mb-6"><p className="mb-1 text-sm font-semibold text-[#356859]">HEALTH LOG</p><h2 id="health-heading" className="text-2xl font-bold tracking-tight md:text-3xl">건강 기록</h2><p className="mt-2 text-sm text-[#74807A]">헬스와 식사를 기록하고, 일요일에 한 주 운동·식단과 몸무게 흐름을 함께 확인하세요.</p></div>
+    <Tabs value={tab} onValueChange={(value) => onTabChange(value as HealthTab)} className="gap-5">
+      <TabsList className="h-11 w-full max-w-md rounded-xl bg-[#E8EEEA] p-1"><TabsTrigger value="workout" className="rounded-lg"><Dumbbell />운동</TabsTrigger><TabsTrigger value="diet" className="rounded-lg"><Utensils />식단</TabsTrigger><TabsTrigger value="weight" className="rounded-lg"><Scale />몸무게</TabsTrigger></TabsList>
+
+      <TabsContent value="workout"><WorkoutPanel key={JSON.stringify(workoutSettings)} week={workoutWeek} settings={workoutSettings} saveSession={saveWorkout} addSession={addWorkout} removeSession={removeWorkout} planWeek={planWorkouts} saveSettings={saveWorkoutSettings} /></TabsContent>
 
       <TabsContent value="diet" className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-3">

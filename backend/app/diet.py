@@ -45,6 +45,9 @@ Describe observations with their date and evidence. Acknowledge uncertain portio
 records in the summary. If the evidence is insufficient, say what additional context would help.
 Keep avoid_foods and limit_foods empty unless a specific logged item and quantity justify them;
 do not issue blanket bans. Give practical, nonjudgmental suggestions in Korean.
+Also consider the week's workouts (strength focus, minutes, completed or missed):
+relate recorded intake and protein to the training actually done, mention it in the summary,
+and do not treat exercise as permission to overeat or invent its calorie burn.
 Do not diagnose disease or prescribe treatment. Explicitly call nutrition estimates estimates.
 Return only the strict JSON schema requested.
 """

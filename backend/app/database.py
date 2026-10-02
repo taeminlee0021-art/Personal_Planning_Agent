@@ -224,6 +224,46 @@ diet_reviews = Table(
     sqlite_autoincrement=True,
 )
 
+workout_settings = Table(
+    "workout_settings", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("weekdays", JSON, nullable=False),
+    Column("strength_minutes", Integer, nullable=False),
+    Column("cardio_minutes", Integer, nullable=False),
+    CheckConstraint("id = 1"),
+    CheckConstraint("strength_minutes BETWEEN 0 AND 180"),
+    CheckConstraint("cardio_minutes BETWEEN 0 AND 180"),
+)
+
+workout_weeks = Table(
+    "workout_weeks", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("week_start", Date, nullable=False, unique=True, index=True),
+    Column("summary", String(2000)),
+    Column("planned_at", UTCDateTime()),
+    Column("created_at", UTCDateTime(), nullable=False),
+    sqlite_autoincrement=True,
+)
+
+workout_sessions = Table(
+    "workout_sessions", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("week_start", Date, nullable=False, index=True),
+    Column("session_date", Date, nullable=False, unique=True, index=True),
+    Column("muscle_groups", JSON, nullable=False),
+    Column("focus_source", String(10), nullable=False),
+    Column("note", String(500), nullable=False),
+    Column("strength_minutes", Integer, nullable=False),
+    Column("cardio_minutes", Integer, nullable=False),
+    Column("completed", Boolean, nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    CheckConstraint("focus_source IN ('NONE', 'AI', 'MANUAL')"),
+    CheckConstraint("strength_minutes BETWEEN 0 AND 180"),
+    CheckConstraint("cardio_minutes BETWEEN 0 AND 180"),
+    sqlite_autoincrement=True,
+)
+
 class Database:
     def __init__(self, location: str | Path):
         raw_location = str(location)

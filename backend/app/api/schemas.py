@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 from app.actions import Review
-from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput
 from app.models import Model, TaskFields
 from app.planning import Preferences
 
@@ -162,3 +162,24 @@ class ErrorBody(Model):
 
 class ErrorResponse(Model):
     error: ErrorBody
+
+
+class WorkoutSettingsResponse(WorkoutSettingsInput):
+    pass
+
+
+class WorkoutSessionResponse(WorkoutSessionInput):
+    id: int
+    week_start: date
+    focus_source: Literal["NONE", "AI", "MANUAL"]
+    strength_minutes: int
+    cardio_minutes: int
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class WorkoutWeekResponse(Model):
+    week_start: date
+    summary: str | None
+    planned_at: AwareDatetime | None
+    sessions: list[WorkoutSessionResponse]

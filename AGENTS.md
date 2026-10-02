@@ -1699,3 +1699,27 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - The first backend `/health` check timed out at 25 seconds during wake-up;
   the frontend subsequently loaded. Button-save latency in production still
   needs user observation after the new client bundle is refreshed.
+
+## 2026-10-02 - Local weekly workout split
+
+- The user requested weekly gym sessions in Health with AI-chosen strength focus.
+  Local only: no commit, push, Render or Sites deployment until the user orders it.
+- Added workout_settings (default Mon/Wed/Fri/Sun, strength 30 + cardio 30 min),
+  workout_weeks (one generation marker plus AI summary per week) and
+  workout_sessions (one per date). New tables only; existing data is untouched.
+- Opening the current week deterministically creates its sessions once; deleted
+  sessions are not regenerated. Sessions move only to free days in the same
+  Monday-Sunday week. Settings changes apply to weeks generated afterwards.
+- Muscle groups: LEGS, BACK, CHEST, SHOULDERS, ARMS, CORE, FULL_BODY (max two per
+  session). An explicit `AI로 부위 짜기` action sends the current week plus 8 weeks
+  of history, height and latest weight to gpt (strict schema). Only unfinished,
+  non-manual sessions are assigned; the backend rejects any mismatched session set.
+  Hand-picked groups become MANUAL and are kept as context for later AI runs.
+- Health has a new default 운동 tab. Today shows `오늘의 운동` with completion,
+  Weekly Plan shows sessions per day, and 헬스 goal and sidebar progress count them.
+- The weekly diet GPT review payload now includes the week's workouts
+  (focus, minutes, completed) and its instructions consider training.
+- Verification: 211 backend tests passed (6 new) with the two existing upstream
+  warnings; frontend tsc and ESLint passed. Browser check confirmed generation,
+  muscle selection, day move persistence and 375px layout without horizontal
+  scroll. No paid OpenAI call was made; real workout-AI output is untested.

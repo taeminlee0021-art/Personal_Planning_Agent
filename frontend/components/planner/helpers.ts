@@ -1,4 +1,4 @@
-import type { Preferences, Priority, ScheduleDraft, TaskDraft } from "@/lib/types"
+import type { MuscleGroup, Preferences, Priority, ScheduleDraft, TaskDraft, WorkoutSession } from "@/lib/types"
 
 export type View = "today" | "tasks" | "week" | "weight" | "agent" | "settings"
 
@@ -69,3 +69,17 @@ export function toDatetimeLocal(value: string) {
 }
 
 export function toAware(value: string) { return `${value}:00+09:00` }
+
+export const muscleLabel: Record<MuscleGroup, string> = {
+  LEGS: "하체", BACK: "등", CHEST: "가슴", SHOULDERS: "어깨", ARMS: "팔", CORE: "코어", FULL_BODY: "전신",
+}
+
+export const weekdayLabels = ["월", "화", "수", "목", "금", "토", "일"]
+
+export function workoutTitle(session: WorkoutSession) {
+  return session.muscle_groups.length ? `헬스 · ${session.muscle_groups.map((group) => muscleLabel[group]).join("+")}` : "헬스"
+}
+
+export function workoutMinutes(session: WorkoutSession) {
+  return [session.strength_minutes && `근력 ${session.strength_minutes}분`, session.cardio_minutes && `유산소 ${session.cardio_minutes}분`].filter(Boolean).join(" + ")
+}

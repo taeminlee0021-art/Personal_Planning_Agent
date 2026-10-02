@@ -70,6 +70,46 @@ class WeightRecordInput(Model):
     weight_kg: float = Field(ge=20, le=400, allow_inf_nan=False)
 
 
+MuscleGroup = Literal["LEGS", "BACK", "CHEST", "SHOULDERS", "ARMS", "CORE", "FULL_BODY"]
+
+
+def unique_muscle_groups(value):
+    if len(value) != len(set(value)):
+        raise ValueError("Muscle groups must be unique")
+    return value
+
+
+class WorkoutSettingsInput(Model):
+    weekdays: list[int] = Field(default_factory=lambda: [0, 2, 4, 6], min_length=1, max_length=7)
+    strength_minutes: int = Field(default=30, ge=0, le=180)
+    cardio_minutes: int = Field(default=30, ge=0, le=180)
+
+    @field_validator("weekdays")
+    @classmethod
+    def valid_weekdays(cls, value):
+        if any(day < 0 or day > 6 for day in value) or len(value) != len(set(value)):
+            raise ValueError("Weekdays must be unique values from 0 to 6")
+        return sorted(value)
+
+    @model_validator(mode="after")
+    def has_duration(self):
+        if self.strength_minutes + self.cardio_minutes == 0:
+            raise ValueError("Workout needs a positive duration")
+        return self
+
+
+class WorkoutSessionInput(Model):
+    session_date: date
+    muscle_groups: list[MuscleGroup] = Field(default_factory=list, max_length=2)
+    note: str = Field(default="", max_length=500)
+    completed: bool = False
+
+    @field_validator("muscle_groups")
+    @classmethod
+    def valid_groups(cls, value):
+        return unique_muscle_groups(value)
+
+
 class MealEntryInput(Model):
     eaten_on: date | None = None
     meal_type: Literal["BREAKFAST", "LUNCH", "DINNER", "SNACK"]

@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, Path, Request, Response, Body
 from app.api.schemas import (
     AgentMessage, AgentResponse, BodySettingsResponse, DietReviewResponse, EmptyDecision, ErrorResponse, FoodNutritionResponse, MealEntryResponse, PlanResponse, PlanStatusUpdate, PreferencesResponse,
     RecurringTaskResponse, ScheduleResponse, ScheduleStatusUpdate, TaskCreate, TaskUpdate, TodayItemResponse,
-    TodayItemsReorder, TodayItemUpdate, WeightRecordResponse,
+    TodayItemsReorder, TodayItemUpdate, WeightRecordResponse, WorkoutSessionResponse, WorkoutSettingsResponse, WorkoutWeekResponse,
 )
 from app.actions import ActionResponse, ActionService, ApprovalSelection
-from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput
+from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput
 from app.models import Task
 from app.planning import Preferences
 from app.storage_service import DatabasePlanningService
@@ -201,6 +201,45 @@ def analyze_current_diet(request: Request, service: Service):
     payload = service.diet_analysis_payload()
     analysis = request.app.state.diet_runner(payload)
     return service.save_diet_analysis(analysis)
+
+
+@router.get("/body/workout-settings", response_model=WorkoutSettingsResponse, tags=["Body"])
+def workout_settings(service: Service):
+    return service.get_workout_settings()
+
+
+@router.put("/body/workout-settings", response_model=WorkoutSettingsResponse, tags=["Body"])
+def update_workout_settings(value: WorkoutSettingsInput, service: Service):
+    """Default weekdays apply to weeks generated after the change."""
+    return service.save_workout_settings(value)
+
+
+@router.get("/body/workouts/week", response_model=WorkoutWeekResponse, tags=["Body"])
+def workout_week(service: Service):
+    return service.get_workout_week()
+
+
+@router.post("/body/workouts/week/plan", response_model=WorkoutWeekResponse, tags=["Body"])
+def plan_workout_week(request: Request, service: Service):
+    payload = service.workout_plan_payload()
+    plan = request.app.state.workout_runner(payload)
+    return service.save_workout_plan(plan)
+
+
+@router.post("/body/workouts", response_model=WorkoutSessionResponse, status_code=201, tags=["Body"])
+def create_workout_session(value: WorkoutSessionInput, service: Service):
+    return service.create_workout_session(value)
+
+
+@router.put("/body/workouts/{identifier}", response_model=WorkoutSessionResponse, tags=["Body"])
+def update_workout_session(identifier: Identifier, value: WorkoutSessionInput, service: Service):
+    return service.update_workout_session(identifier, value)
+
+
+@router.delete("/body/workouts/{identifier}", status_code=204, tags=["Body"])
+def delete_workout_session(identifier: Identifier, service: Service):
+    service.delete_workout_session(identifier)
+    return Response(status_code=204)
 
 @router.get("/preferences", response_model=PreferencesResponse, tags=["Preferences"])
 def preferences(service: Service):

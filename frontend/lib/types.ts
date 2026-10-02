@@ -212,3 +212,33 @@ export interface DietReview {
   created_at: string
   updated_at: string
 }
+export type MuscleGroup = "LEGS" | "BACK" | "CHEST" | "SHOULDERS" | "ARMS" | "CORE" | "FULL_BODY"
+
+export interface WorkoutSettings {
+  weekdays: number[]
+  strength_minutes: number
+  cardio_minutes: number
+}
+
+export interface WorkoutSession {
+  id: number
+  week_start: string
+  session_date: string
+  muscle_groups: MuscleGroup[]
+  focus_source: "NONE" | "AI" | "MANUAL"
+  note: string
+  strength_minutes: number
+  cardio_minutes: number
+  completed: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type WorkoutSessionDraft = Pick<WorkoutSession, "session_date" | "muscle_groups" | "note" | "completed">
+
+export interface WorkoutWeek {
+  week_start: string
+  summary: string | null
+  planned_at: string | null
+  sessions: WorkoutSession[]
+}
