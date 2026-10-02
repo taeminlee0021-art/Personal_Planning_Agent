@@ -1733,3 +1733,32 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   New tables are created on startup; no production records were written.
 - Sites frontend publishing is pending: this Claude Code session has no Sites
   publishing tool, so the owner must publish `frontend/` from GitHub main.
+
+## 2026-10-02 - Cloudflare Workers mirror of the frontend
+
+- The user requested a second, owner-only frontend deployment on Cloudflare
+  Workers (free plan) alongside ChatGPT Sites, protected by Cloudflare Access.
+- Pre-check: the browser only calls the same-origin `/api` proxy routes, which
+  read BACKEND_API_URL and APP_INTERNAL_TOKEN from process.env at runtime; the
+  build output contains neither the token nor the backend URL; `chatgpt-auth.ts`
+  is not imported anywhere; the Sites plugin mock login is dev-server only; the
+  build has no D1/R2/KV bindings. Backend CORS and the token were left unchanged.
+- Added `frontend/scripts/deploy-cloudflare.mjs` (`npm run deploy:cloudflare`,
+  `--skip-build`, `--dry-run`). It reuses the Sites build, leaves
+  `dist/server/wrangler.json` untouched and writes a sibling
+  `wrangler.cloudflare.json` with name `personal-planning-agent`,
+  `workers_dev=true`, `preview_urls=false` and `vars.BACKEND_API_URL` from
+  CF_BACKEND_API_URL (https origin only). It refuses builds whose vars contain
+  APP_INTERNAL_TOKEN or OPENAI_API_KEY. Sites config and scripts are unchanged.
+- Dry run: 1.3 MB upload, 394 KiB gzip, only the BACKEND_API_URL binding.
+  ESLint, tsc and 217 backend tests passed. README documents the procedure and
+  the known Windows/wrangler pitfalls.
+- Order enforced: deploy without token -> Access (All traffic, Cloudflare
+  account policy) -> verified `/`, `/api/health`, `/api/tasks` and
+  `/api/body/workouts/week` all return 302 to `*.cloudflareaccess.com` without
+  login -> only then the existing token was added via `wrangler secret put`.
+  A first 401 was caused by the secret not yet being set, not a value mismatch.
+- Live at https://personal-planning-agent.team621.workers.dev (workers.dev
+  subdomain `team621`, Cloudflare account dlxoalal@gmail.com). The owner
+  confirmed the page loads the same data as Sites after Access login. The
+  Sites deployment and Render backend were not changed.
