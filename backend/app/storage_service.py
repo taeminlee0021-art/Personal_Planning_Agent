@@ -275,7 +275,10 @@ class DatabasePlanningService:
         week_start = item_date - timedelta(days=item_date.weekday())
         week_end = week_start + timedelta(days=7)
         with self.database.transaction(write=True) as repository:
-            self._materialize_today_items(repository, item_date)
+            # Past days of the week also get their recurring rows so that Weekly
+            # Plan can mark them complete retroactively. Future days stay virtual.
+            for offset in range((item_date - week_start).days + 1):
+                self._materialize_today_items(repository, week_start + timedelta(days=offset))
             rows = repository.list(
                 db.today_items,
                 db.today_items.c.item_date >= week_start,

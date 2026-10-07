@@ -8,10 +8,11 @@ import { LoadingCards } from "@/components/planner/shared"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const featuredActivities = ["헬스", "부동산 공부", "이직 준비"]
 
-export function WeekView({ loading, plans, schedules, recurringTasks, weekTodayItems, workouts, onScheduleSaved, removeSchedule }: { loading: boolean; plans: Plan[]; schedules: FixedSchedule[]; recurringTasks: RecurringTask[]; weekTodayItems: TodayItem[]; workouts: WorkoutSession[]; onScheduleSaved: (saved: FixedSchedule) => void; removeSchedule: (id: number) => Promise<void> }) {
+export function WeekView({ loading, plans, schedules, recurringTasks, weekTodayItems, workouts, onScheduleSaved, removeSchedule, togglePlan, toggleSchedule, toggleTodayItem, toggleWorkout }: { loading: boolean; plans: Plan[]; schedules: FixedSchedule[]; recurringTasks: RecurringTask[]; weekTodayItems: TodayItem[]; workouts: WorkoutSession[]; onScheduleSaved: (saved: FixedSchedule) => void; removeSchedule: (id: number) => Promise<void>; togglePlan: (plan: Plan) => Promise<void>; toggleSchedule: (schedule: FixedSchedule) => Promise<void>; toggleTodayItem: (item: TodayItem) => Promise<void>; toggleWorkout: (session: WorkoutSession) => Promise<void> }) {
   const days = weekDays()
   const today = dateKey(new Date())
   return <section aria-labelledby="week-heading">
@@ -45,26 +46,42 @@ export function WeekView({ loading, plans, schedules, recurringTasks, weekTodayI
       const completedPlans = dayPlans.filter((plan) => plan.status === "COMPLETED")
       const pendingUntimed = untimedItems.filter((item) => item.status !== "COMPLETED")
       const completedUntimed = untimedItems.filter((item) => item.status === "COMPLETED")
-      const recurringRows = recurring.map((item) => ({
-        item,
-        completed: weekTodayItems.some((row) => row.item_date === day && row.recurrence_id === item.id && row.status === "COMPLETED"),
-      }))
+      const recurringRows = recurring.map((item) => {
+        const row = weekTodayItems.find((candidate) => candidate.item_date === day && candidate.recurrence_id === item.id)
+        return { item, row, completed: row?.status === "COMPLETED" }
+      })
       return <section key={day} className={`min-w-0 overflow-hidden rounded-[1.2rem] border p-4 ${isToday ? "border-[#7DA394] bg-[#F0F7F3]" : "bg-white"}`}>
         <div className="mb-4"><p className={`text-sm font-bold ${isToday ? "text-[#285A4D]" : "text-[#68746E]"}`}>{formatDate(`${day}T12:00:00+09:00`, { weekday: "short" })}</p><div className="mt-1 flex items-center gap-2"><p className="text-2xl font-bold text-[#263A33]">{Number(day.slice(-2))}</p>{isToday && <Badge className="bg-[#356859]">오늘</Badge>}</div></div>
         <div className="grid gap-2">
-          {pendingPlans.map((plan) => <div key={`p-${plan.id}`} className="min-w-0 rounded-xl border-l-4 border-[#356859] bg-white p-3 shadow-sm"><p className="whitespace-nowrap text-xs font-semibold text-[#66736D]">{formatTime(plan.start_datetime)} · {duration(plan.start_datetime, plan.end_datetime)}분</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#263A33]" title={plan.title}>{plan.title}</p></div>)}
-          {dayWorkouts.filter((item) => !item.completed).map((item) => <div key={`w-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#2F7A5F] bg-[#EEF7F2] p-3"><p className="flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-[#3D6E5C]"><Dumbbell className="size-3.5" />{workoutMinutes(item)}</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#24453A]" title={workoutTitle(item)}>{workoutTitle(item)}</p></div>)}
-          {pendingFixed.map((item) => <div key={`s-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#D17B52] bg-[#FFF7F1] p-3"><p className="whitespace-nowrap text-xs font-semibold text-[#9A6046]">{formatTime(item.start_datetime)}–{formatTime(item.end_datetime)}</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#5D4034]" title={item.title}>{item.title}</p><div className="mt-2 flex justify-end gap-1 border-t border-[#ECD9CF] pt-2"><ScheduleDialog schedule={item} trigger={<button aria-label={`${item.title} 수정`} className="grid size-8 place-items-center rounded-lg text-[#98634C] hover:bg-white"><Pencil className="size-4" /></button>} onSaved={onScheduleSaved} /><AlertDialog><AlertDialogTrigger asChild><button aria-label={`${item.title} 삭제`} className="grid size-8 place-items-center rounded-lg text-[#98634C] hover:bg-white"><Trash2 className="size-4" /></button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>‘{item.title}’ 일정을 삭제할까요?</AlertDialogTitle><AlertDialogDescription>기존 계획이 이 일정과 충돌하게 되면 삭제가 거절됩니다.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void removeSchedule(item.id)}>삭제</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div></div>)}
-          {pendingUntimed.map((item) => <div key={`t-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#5E7798] bg-[#F3F7FC] p-3"><p className="flex items-center gap-1 text-xs font-semibold text-[#5E7190]"><CheckCircle2 className="size-3.5" />체크리스트</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#32465F]" title={item.title}>{item.title}</p></div>)}
-          {recurringRows.filter((row) => !row.completed).map(({ item }) => <div key={`r-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#7B9C8E] bg-[#F1F6F3] p-3"><p className="text-xs font-semibold text-[#607B70]">반복</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#314A40]" title={item.title}>{item.title}</p></div>)}
-          {completedPlans.map((plan) => <div key={`p-${plan.id}`} className="min-w-0 rounded-xl border-l-4 border-[#9AA8A2] bg-[#F2F4F2] p-3 opacity-60"><p className="whitespace-nowrap text-xs font-semibold text-[#738079]">{formatTime(plan.start_datetime)} · {duration(plan.start_datetime, plan.end_datetime)}분 · 완료</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#56645E] line-through" title={plan.title}>{plan.title}</p></div>)}
-          {dayWorkouts.filter((item) => item.completed).map((item) => <div key={`w-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#9AA8A2] bg-[#F2F4F2] p-3 opacity-60"><p className="flex items-center gap-1 text-xs font-semibold text-[#738079]"><Dumbbell className="size-3.5" />운동 · 완료</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#56645E] line-through" title={workoutTitle(item)}>{workoutTitle(item)}</p></div>)}
-          {completedFixed.map((item) => <div key={`s-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#9AA8A2] bg-[#F2F4F2] p-3 opacity-60"><p className="whitespace-nowrap text-xs font-semibold text-[#738079]">{formatTime(item.start_datetime)}–{formatTime(item.end_datetime)} · 완료</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#56645E] line-through" title={item.title}>{item.title}</p></div>)}
-          {completedUntimed.map((item) => <div key={`t-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#9AA8A2] bg-[#F2F4F2] p-3 opacity-60"><p className="flex items-center gap-1 text-xs font-semibold text-[#738079]"><CheckCircle2 className="size-3.5" />완료</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#56645E] line-through" title={item.title}>{item.title}</p></div>)}
-          {recurringRows.filter((row) => row.completed).map(({ item }) => <div key={`r-${item.id}`} className="min-w-0 rounded-xl border-l-4 border-[#9AA8A2] bg-[#F2F4F2] p-3 opacity-60"><p className="text-xs font-semibold text-[#738079]">반복 · 완료</p><p className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 text-[#56645E] line-through" title={item.title}>{item.title}</p></div>)}
+          {pendingPlans.map((plan) => <Row key={`p-${plan.id}`} accent="border-[#356859] bg-white shadow-sm" meta={`${formatTime(plan.start_datetime)} · ${duration(plan.start_datetime, plan.end_datetime)}분`} metaClass="text-[#66736D]" title={plan.title} titleClass="text-[#263A33]" onToggle={() => void togglePlan(plan)} />)}
+          {dayWorkouts.filter((item) => !item.completed).map((item) => <Row key={`w-${item.id}`} accent="border-[#2F7A5F] bg-[#EEF7F2]" icon={<Dumbbell className="size-3.5" />} meta={workoutMinutes(item)} metaClass="text-[#3D6E5C]" title={workoutTitle(item)} titleClass="text-[#24453A]" onToggle={() => void toggleWorkout(item)} />)}
+          {pendingFixed.map((item) => <Row key={`s-${item.id}`} accent="border-[#D17B52] bg-[#FFF7F1]" meta={`${formatTime(item.start_datetime)}–${formatTime(item.end_datetime)}`} metaClass="text-[#9A6046]" title={item.title} titleClass="text-[#5D4034]" onToggle={() => void toggleSchedule(item)} footer={<div className="mt-2 flex justify-end gap-1 border-t border-[#ECD9CF] pt-2"><ScheduleDialog schedule={item} trigger={<button aria-label={`${item.title} 수정`} className="grid size-8 place-items-center rounded-lg text-[#98634C] hover:bg-white"><Pencil className="size-4" /></button>} onSaved={onScheduleSaved} /><AlertDialog><AlertDialogTrigger asChild><button aria-label={`${item.title} 삭제`} className="grid size-8 place-items-center rounded-lg text-[#98634C] hover:bg-white"><Trash2 className="size-4" /></button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>‘{item.title}’ 일정을 삭제할까요?</AlertDialogTitle><AlertDialogDescription>기존 계획이 이 일정과 충돌하게 되면 삭제가 거절됩니다.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void removeSchedule(item.id)}>삭제</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>} />)}
+          {pendingUntimed.map((item) => <Row key={`t-${item.id}`} accent="border-[#5E7798] bg-[#F3F7FC]" icon={<CheckCircle2 className="size-3.5" />} meta="체크리스트" metaClass="text-[#5E7190]" title={item.title} titleClass="text-[#32465F]" onToggle={() => void toggleTodayItem(item)} />)}
+          {recurringRows.filter((entry) => !entry.completed).map(({ item, row }) => <Row key={`r-${item.id}`} accent="border-[#7B9C8E] bg-[#F1F6F3]" meta="반복" metaClass="text-[#607B70]" title={item.title} titleClass="text-[#314A40]" onToggle={row ? () => void toggleTodayItem(row) : undefined} />)}
+          {completedPlans.map((plan) => <Row key={`p-${plan.id}`} completed meta={`${formatTime(plan.start_datetime)} · ${duration(plan.start_datetime, plan.end_datetime)}분 · 완료`} title={plan.title} onToggle={() => void togglePlan(plan)} />)}
+          {dayWorkouts.filter((item) => item.completed).map((item) => <Row key={`w-${item.id}`} completed icon={<Dumbbell className="size-3.5" />} meta="운동 · 완료" title={workoutTitle(item)} onToggle={() => void toggleWorkout(item)} />)}
+          {completedFixed.map((item) => <Row key={`s-${item.id}`} completed meta={`${formatTime(item.start_datetime)}–${formatTime(item.end_datetime)} · 완료`} title={item.title} onToggle={() => void toggleSchedule(item)} />)}
+          {completedUntimed.map((item) => <Row key={`t-${item.id}`} completed icon={<CheckCircle2 className="size-3.5" />} meta="완료" title={item.title} onToggle={() => void toggleTodayItem(item)} />)}
+          {recurringRows.filter((entry) => entry.completed).map(({ item, row }) => <Row key={`r-${item.id}`} completed meta="반복 · 완료" title={item.title} onToggle={row ? () => void toggleTodayItem(row) : undefined} />)}
           {dayPlans.length === 0 && dayWorkouts.length === 0 && fixed.length === 0 && recurring.length === 0 && untimedItems.length === 0 && <p className="rounded-xl border border-dashed py-5 text-center text-sm text-[#929A96]">비어 있음</p>}
         </div>
       </section>
     })}</div></>}
   </section>
+}
+
+function Row({ accent, completed, icon, meta, metaClass, title, titleClass, footer, onToggle }: {
+  accent?: string; completed?: boolean; icon?: React.ReactNode; meta: string; metaClass?: string; title: string; titleClass?: string; footer?: React.ReactNode; onToggle?: () => void
+}) {
+  const shell = completed ? "border-[#9AA8A2] bg-[#F2F4F2] opacity-60" : accent
+  return <div className={`min-w-0 rounded-xl border-l-4 p-3 ${shell}`}>
+    <div className="flex items-start gap-2">
+      {onToggle && <Checkbox checked={!!completed} onCheckedChange={onToggle} aria-label={completed ? `${title} 완료 취소` : `${title} 완료`} className="mt-0.5 size-5 shrink-0 rounded-full border-[#6F9586] data-[state=checked]:bg-[#356859]" />}
+      <div className="min-w-0 flex-1">
+        <p className={`flex items-center gap-1 whitespace-nowrap text-xs font-semibold ${completed ? "text-[#738079]" : metaClass}`}>{icon}{meta}</p>
+        <p className={`mt-1 line-clamp-2 break-words text-sm font-semibold leading-5 ${completed ? "text-[#56645E] line-through" : titleClass}`} title={title}>{title}</p>
+      </div>
+    </div>
+    {footer}
+  </div>
 }

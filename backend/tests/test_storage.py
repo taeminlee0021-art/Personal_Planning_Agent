@@ -369,6 +369,21 @@ def test_week_today_items_keeps_prior_day_history(service):
     assert [item["item_date"] for item in week] == ["2026-09-07", "2026-09-08"]
     assert [item["title"] for item in service.list_today_items()] == ["화요일 할 일"]
 
+def test_week_listing_materializes_past_recurring_days_for_retroactive_completion(service):
+    rule = service.save_recurring_task(RecurringTaskInput(title="스트레칭", cadence="DAILY"))
+    service._now = NOW + timedelta(days=2)
+
+    week = service.list_week_today_items()
+    recurring = [item for item in week if item["recurrence_id"] == rule["id"]]
+    assert [item["item_date"] for item in recurring] == ["2026-09-07", "2026-09-08", "2026-09-09"]
+    assert all(item["status"] == "TODO" for item in recurring)
+
+    done = service.update_today_item(recurring[0]["id"], "COMPLETED")
+    assert (done["item_date"], done["status"]) == ("2026-09-07", "COMPLETED")
+    assert len(service.list_week_today_items()) == 3
+    assert [item["title"] for item in service.list_today_items()] == ["스트레칭"]
+
+
 def test_water_drinking_needs_four_500ml_steps(service):
     rule = service.save_recurring_task(RecurringTaskInput(
         title="물 2L 마시기", cadence="DAILY"
