@@ -1762,3 +1762,26 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   subdomain `team621`, Cloudflare account dlxoalal@gmail.com). The owner
   confirmed the page loads the same data as Sites after Access login. The
   Sites deployment and Render backend were not changed.
+
+## 2026-10-08 - Weekly Plan retroactive completion
+
+- The user asked to mark previous days' items complete from Weekly Plan and
+  authorized immediate deployment.
+- Every Weekly Plan row (timed plans, workouts, fixed schedules, checklist items
+  and recurring occurrences) now shows a completion checkbox using the existing
+  status APIs; completed rows keep the muted bottom-of-card rendering.
+- `list_week_today_items` now materializes recurring rows for every elapsed day
+  of the current week (Monday through today), so a day whose Today view was
+  never opened can still be checked retroactively. Future days remain virtual
+  previews without a checkbox. Weekly targets are unchanged because they were
+  already derived from rules; completed counts now include retroactive checks.
+- Verification: 218 backend tests passed (1 new), frontend tsc, ESLint and the
+  Vinext production build passed. Local browser smoke confirmed Mon-Thu rows
+  got checkboxes, Fri-Sun did not, a Monday check persisted as COMPLETED, and
+  the 375px layout had no horizontal scroll. The temporary local rule and its
+  rows were deleted afterwards.
+- Deployment: pushed GitHub main `9074276`; Cloudflare Worker redeployed
+  (version `e6493d76`, secret retained, unauthenticated requests still 302 to
+  Access); Render `personal-planning-agent-api-64ij` manual deploy of
+  `9074276` succeeded and is Live with `/health` 200. The ChatGPT Sites
+  frontend still needs the owner's Codex publish from GitHub main.
