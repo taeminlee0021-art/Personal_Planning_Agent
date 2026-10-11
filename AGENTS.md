@@ -1785,3 +1785,27 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   Access); Render `personal-planning-agent-api-64ij` manual deploy of
   `9074276` succeeded and is Live with `/health` 200. The ChatGPT Sites
   frontend still needs the owner's Codex publish from GitHub main.
+
+## 2026-10-11 - Daily protein target in the diet log
+
+- The user set a personal target of 160 g protein per day for weight loss with
+  strength training and asked for a daily check in Health > Diet plus deployment.
+- Added `daily_protein_target_g` to the singleton body settings (default 160,
+  0-500). Existing SQLite and PostgreSQL tables receive the column with the 160
+  default through the startup compatibility upgrade; a legacy-table test covers
+  it. The settings API now returns and replaces both height and target.
+- The Diet tab shows today's protein against the target with a progress bar and
+  remaining grams, a per-day protein bar above each day's meals, and an editable
+  target card. The weekly diet GPT payload and instructions include the target
+  so the review names recorded days that fell short without inventing intake.
+- Verification: 219 backend tests passed (2 new), frontend tsc, ESLint and the
+  Vinext production build passed. Local browser smoke confirmed the migrated
+  default, today's 62/160 display, target save to 150 and the 375px layout;
+  the temporary local meal and target change were reverted.
+- Deployment order: GitHub main `68011db`; the Worker was briefly redeployed
+  before the backend and rolled back to `e6493d76` to avoid a mismatched UI,
+  then Render `personal-planning-agent-api-64ij` manual deploy of `68011db`
+  went live (OpenAPI and `/api/body/settings` return the field with 160 from
+  the production database); the Worker was then redeployed as `a77efa83` with
+  the secret retained and unauthenticated requests still 302 to Access. The
+  ChatGPT Sites frontend still needs the owner's Codex publish from main.
