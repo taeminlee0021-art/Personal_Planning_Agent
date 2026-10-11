@@ -1809,3 +1809,38 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   the production database); the Worker was then redeployed as `a77efa83` with
   the secret retained and unauthenticated requests still 302 to Access. The
   ChatGPT Sites frontend still needs the owner's Codex publish from main.
+
+## 2026-10-11 - Diet review rewritten as a coaching plan
+
+- The user found the weekly GPT diet review generic (no real recommendations,
+  strengths or weaknesses) and asked for every proposed fix plus a stronger model.
+- Diagnosis: the previous instructions were mostly prohibitions, the output
+  shape only allowed food lists, there was no calorie reference point, and the
+  review ran on gpt-5-nano at low reasoning.
+- Added `daily_calorie_target_kcal` to body settings (default 1800, 0-10000)
+  beside the protein target; both are editable in the Diet tab's 하루 목표 card.
+  Existing SQLite/PostgreSQL rows gain the column with the default.
+- The analysis payload now carries deterministic per-day totals (meals logged,
+  calories, protein, unresolved entries) so the model never recomputes sums.
+  The instructions were rewritten as a direct coach brief: judge each logged day
+  against the user's targets, name the single biggest issue with evidence, give
+  two or three concrete next-week swaps tied to logged foods, cite good points
+  with evidence, and only list avoid/limit foods that appeared in the log.
+  Incomplete days are still treated as unknown, not fasting.
+- `DietAnalysis` gained `biggest_issue` and `next_week_actions`; `diet_reviews`
+  gained matching nullable columns (additive). Older stored reviews render with
+  those sections omitted.
+- The Diet tab now shows weekly numbers computed in the browser (logged days,
+  protein-target days, average protein and calories vs targets), the biggest
+  issue, a numbered next-week action list, and the three existing lists.
+- The review now uses gpt-5-mini with medium reasoning and a 4000-token ceiling;
+  OPENAI_DIET_MODEL overrides it. The planner still uses OPENAI_MODEL.
+- Verification: 219 backend tests passed, frontend tsc, ESLint and Vinext build
+  passed. A seeded fake review on the local SQLite confirmed the layout at
+  desktop and 375px; the seeded meals and review were removed afterwards.
+  No paid call was made locally; the first real gpt-5-mini review is pending.
+- Deployment: GitHub main `66e34e9`; Render `personal-planning-agent-api-64ij`
+  manual deploy succeeded and is Live (production settings return the 1800 kcal
+  default; the existing week-of-10-05 review row survived the column add);
+  Worker redeployed as `93f4d28c` with the secret retained. Sites still needs
+  the owner's Codex publish.
