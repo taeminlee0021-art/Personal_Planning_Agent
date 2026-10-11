@@ -141,3 +141,23 @@ def test_diet_api_uses_injected_runner_and_never_requires_browser_key(tmp_path, 
         assert len(captured) == 1
         assert client.get("/api/body/meals").json()[0]["calories_kcal"] == 120
         assert client.get("/api/body/foods").json()[0]["display_name"] == "사과 1개"
+
+
+def test_existing_body_settings_gain_protein_target_and_payload_includes_it(tmp_path):
+    from sqlalchemy import create_engine, text
+    path = tmp_path / "legacy-body.db"
+    engine = create_engine(f"sqlite:///{path}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE body_settings (id INTEGER PRIMARY KEY, height_cm FLOAT NOT NULL)"))
+        connection.execute(text("INSERT INTO body_settings (id, height_cm) VALUES (1, 171.0)"))
+    engine.dispose()
+
+    database = db.Database(path)
+    try:
+        service = DatabasePlanningService(database, now=SUNDAY)
+        assert service.get_body_settings() == {"height_cm": 171.0, "daily_protein_target_g": 160.0}
+        service.save_meal_entry(MealEntryInput(meal_type="LUNCH", food_name="두부", calories_kcal=120, protein_g=12))
+        assert service.diet_analysis_payload()["daily_protein_target_g"] == 160.0
+    finally:
+        database.close()

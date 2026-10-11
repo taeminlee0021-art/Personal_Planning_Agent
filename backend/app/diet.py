@@ -34,6 +34,8 @@ Respect stated portions and units: 130 g cooked rice means 130 g of cooked rice,
 or 130 g of carbohydrate. If food or portion is ambiguous, use a conservative estimate and say so.
 Review only the logged dates and meals. Missing dates or meals mean unknown intake, not fasting;
 never treat a partial log as a complete day or divide observed intake by seven to judge adequacy.
+The user's own daily protein target is daily_protein_target_g; compare each recorded day's
+protein against it and say which days fell short, without inventing intake for unlogged meals.
 Use the supplied latest weight, its measurement date, recent weight records, and height as context
 when available, but do not invent age, sex, activity, goal weight, energy needs, or a weight trend.
 Height may be a default setting; do not infer a personal calorie target or diagnose from BMI.

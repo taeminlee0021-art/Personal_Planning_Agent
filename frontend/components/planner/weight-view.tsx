@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { Input } from "@/components/ui/input"
+import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LoadingCards } from "@/components/planner/shared"
 
@@ -32,7 +33,7 @@ function nutrition(value: number | null, unit: string) {
 
 export type HealthTab = "workout" | "diet" | "weight"
 
-export function WeightView({ loading, tab, onTabChange, settings, records, meals, foods, review, workoutWeek, workoutSettings, saveWeight, saveHeight, saveMeal, removeMeal, analyzeDiet, saveWorkout, addWorkout, removeWorkout, planWorkouts, saveWorkoutSettings }: {
+export function WeightView({ loading, tab, onTabChange, settings, records, meals, foods, review, workoutWeek, workoutSettings, saveWeight, saveHeight, saveProteinTarget, saveMeal, removeMeal, analyzeDiet, saveWorkout, addWorkout, removeWorkout, planWorkouts, saveWorkoutSettings }: {
   tab: HealthTab
   onTabChange: (tab: HealthTab) => void
   workoutWeek: WorkoutWeek | null
@@ -50,6 +51,7 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
   review: DietReview | null
   saveWeight: (weight: number, measuredOn: string) => Promise<void>
   saveHeight: (height: number) => Promise<void>
+  saveProteinTarget: (target: number) => Promise<void>
   saveMeal: (meal: MealDraft) => Promise<void>
   removeMeal: (id: number) => Promise<void>
   analyzeDiet: () => Promise<void>
@@ -57,6 +59,7 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
   const [weight, setWeight] = useState("")
   const [measuredOn, setMeasuredOn] = useState(() => dateKey(new Date()))
   const [height, setHeight] = useState(String(settings.height_cm))
+  const [proteinTarget, setProteinTarget] = useState(String(settings.daily_protein_target_g))
   const [meal, setMeal] = useState<MealDraft>(emptyMeal)
   const [saving, setSaving] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -71,6 +74,13 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
     protein: meals.reduce((sum, item) => sum + (item.protein_g ?? 0), 0),
     unresolved: meals.filter((item) => item.calories_kcal === null || item.protein_g === null).length,
   }), [meals])
+  const todayKey = dateKey(new Date())
+  const proteinByDay = useMemo(() => meals.reduce<Record<string, number>>((days, item) => {
+    days[item.eaten_on] = (days[item.eaten_on] ?? 0) + (item.protein_g ?? 0)
+    return days
+  }, {}), [meals])
+  const todayProtein = proteinByDay[todayKey] ?? 0
+  const target = settings.daily_protein_target_g
   const grouped = useMemo(() => Object.entries(meals.reduce<Record<string, MealEntry[]>>((days, item) => {
     ;(days[item.eaten_on] ??= []).push(item)
     return days
@@ -104,6 +114,11 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
     try { await saveMeal({ ...meal, food_name: meal.food_name.trim() }); setMeal(emptyMeal()) } finally { setSaving(false) }
   }
 
+  async function updateProteinTarget() {
+    const value = Number(proteinTarget); if (!Number.isFinite(value) || value < 0 || value > 500) return
+    setSaving(true); try { await saveProteinTarget(value) } finally { setSaving(false) }
+  }
+
   async function updateHeight() {
     const value = Number(height); if (!Number.isFinite(value) || value <= 50 || value > 250) return
     setSaving(true); try { await saveHeight(value) } finally { setSaving(false) }
@@ -125,7 +140,7 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
       <TabsContent value="diet" className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-3">
           <article className="rounded-[1.3rem] bg-[#183D35] p-5 text-white"><div className="flex items-center gap-2 text-[#CDE0D8]"><Flame className="size-5" /><p className="text-sm font-semibold">이번 주 칼로리</p></div><p className="mt-5 text-3xl font-bold">{Math.round(totals.calories).toLocaleString()} kcal</p></article>
-          <article className="rounded-[1.3rem] border bg-white p-5"><p className="text-sm font-semibold text-[#356859]">이번 주 단백질</p><p className="mt-5 text-3xl font-bold text-[#253A32]">{Math.round(totals.protein)} g</p></article>
+          <article className="rounded-[1.3rem] border bg-white p-5"><p className="text-sm font-semibold text-[#356859]">오늘 단백질</p><div className="mt-5 flex flex-wrap items-end gap-2"><p className="text-3xl font-bold text-[#253A32]">{Math.round(todayProtein)} g</p><p className="mb-1 text-sm text-[#7A8580]">/ {target} g</p>{target > 0 && todayProtein >= target && <Badge className="mb-1 bg-[#E3EEE8] text-[#285A4D] hover:bg-[#E3EEE8]">목표 달성</Badge>}</div><Progress value={target > 0 ? Math.min(100, todayProtein / target * 100) : 0} aria-label="오늘 단백질 달성률" className="mt-3 bg-[#E5ECE8] [&_[data-slot=progress-indicator]]:bg-[#356859]" /><p className="mt-2 text-sm text-[#7A8580]">{target > 0 && todayProtein < target ? `${Math.round(target - todayProtein)} g 더 필요 · 이번 주 ${Math.round(totals.protein)} g` : `이번 주 ${Math.round(totals.protein)} g`}</p></article>
           <article className="rounded-[1.3rem] border bg-white p-5"><p className="text-sm font-semibold text-[#356859]">영양정보 미확정</p><p className="mt-5 text-3xl font-bold text-[#253A32]">{totals.unresolved}개</p><p className="mt-2 text-sm text-[#7A8580]">평가 시 GPT가 추정합니다.</p></article>
         </div>
 
@@ -140,7 +155,7 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
           </form>
 
           <section className="rounded-[1.3rem] border bg-white p-4 sm:p-6"><div className="flex items-center justify-between gap-3"><div><h3 className="font-bold text-[#263A33]">이번 주 식사</h3><p className="mt-1 text-sm text-[#7A8580]">같은 음식은 다음 입력부터 영양값이 자동 완성됩니다.</p></div></div>
-            {grouped.length ? <div className="mt-4 space-y-5">{grouped.map(([day, entries]) => <div key={day}><p className="mb-2 text-sm font-bold text-[#50625A]">{formatDate(`${day}T12:00:00+09:00`, { month: "long", day: "numeric", weekday: "short" })}</p><div className="space-y-2">{entries!.map((item) => <article key={item.id} className="flex items-start gap-3 rounded-xl bg-[#F7F9F6] p-3"><Badge variant="secondary" className="mt-0.5 shrink-0">{mealLabels[item.meal_type]}</Badge><div className="min-w-0 flex-1"><p className="font-medium break-words">{item.food_name}</p><p className="mt-1 text-xs text-[#718079]">{nutrition(item.calories_kcal, " kcal")} · 단백질 {nutrition(item.protein_g, "g")}{item.nutrition_source === "GPT" || item.nutrition_source === "MIXED" ? " · GPT 추정" : ""}</p></div><Button type="button" size="icon" variant="ghost" aria-label={`${item.food_name} 삭제`} onClick={() => void removeMeal(item.id)} className="size-9 shrink-0 text-[#9A6554]"><Trash2 /></Button></article>)}</div></div>)}</div> : <div className="mt-4 rounded-xl border border-dashed px-4 py-10 text-center text-sm text-[#7A8580]">이번 주 식사 기록이 없습니다.</div>}
+            {grouped.length ? <div className="mt-4 space-y-5">{grouped.map(([day, entries]) => <div key={day}><p className="mb-2 text-sm font-bold text-[#50625A]">{formatDate(`${day}T12:00:00+09:00`, { month: "long", day: "numeric", weekday: "short" })}</p><ProteinBar value={proteinByDay[day] ?? 0} target={target} /><div className="space-y-2">{entries!.map((item) => <article key={item.id} className="flex items-start gap-3 rounded-xl bg-[#F7F9F6] p-3"><Badge variant="secondary" className="mt-0.5 shrink-0">{mealLabels[item.meal_type]}</Badge><div className="min-w-0 flex-1"><p className="font-medium break-words">{item.food_name}</p><p className="mt-1 text-xs text-[#718079]">{nutrition(item.calories_kcal, " kcal")} · 단백질 {nutrition(item.protein_g, "g")}{item.nutrition_source === "GPT" || item.nutrition_source === "MIXED" ? " · GPT 추정" : ""}</p></div><Button type="button" size="icon" variant="ghost" aria-label={`${item.food_name} 삭제`} onClick={() => void removeMeal(item.id)} className="size-9 shrink-0 text-[#9A6554]"><Trash2 /></Button></article>)}</div></div>)}</div> : <div className="mt-4 rounded-xl border border-dashed px-4 py-10 text-center text-sm text-[#7A8580]">이번 주 식사 기록이 없습니다.</div>}
           </section>
         </div>
 
@@ -148,6 +163,8 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
           {review && <div className="mt-5 grid gap-4 border-t border-[#D8E3DD] pt-5 md:grid-cols-3"><div className="md:col-span-3"><p className="leading-7 text-[#344A42]">{review.summary}</p><p className="mt-2 text-sm font-medium text-[#66766F]">기록된 식사 합계 {Math.round(review.total_calories_kcal)} kcal · 단백질 {review.total_protein_g.toFixed(1)}g</p></div><ReviewList title="좋았던 점" items={review.good_points} tone="good" /><ReviewList title="조절을 고려할 음식" items={review.avoid_foods} tone="avoid" /><ReviewList title="양을 살펴볼 음식" items={review.limit_foods} tone="limit" /></div>}
           <p className="mt-4 text-xs leading-5 text-[#7B8983]">GPT 영양값은 일반적인 양을 바탕으로 한 추정치이며, BMI와 식단 평가는 의료 진단을 대신하지 않습니다.</p>
         </section>
+
+        <section className="rounded-[1.3rem] border bg-white p-5 sm:p-6"><h3 className="font-bold text-[#263A33]">하루 단백질 목표</h3><p className="mt-1 text-sm text-[#7A8580]">날짜별 달성도와 GPT 식단 평가가 이 값을 기준으로 합니다.</p><div className="mt-4 flex items-center gap-2"><Input aria-label="하루 단백질 목표 그램" type="number" min={0} max={500} step="1" inputMode="numeric" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} className="h-11 max-w-40" /><span className="shrink-0 text-sm text-[#66736D]">g / 일</span><Button type="button" variant="outline" disabled={saving || Number(proteinTarget) === settings.daily_protein_target_g} onClick={() => void updateProteinTarget()} className="h-11">저장</Button></div></section>
       </TabsContent>
 
       <TabsContent value="weight" className="space-y-5">
@@ -163,6 +180,11 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
       </TabsContent>
     </Tabs>
   </section>
+}
+
+function ProteinBar({ value, target }: { value: number; target: number }) {
+  const reached = target > 0 && value >= target
+  return <div className="mb-2 flex items-center gap-3"><Progress value={target > 0 ? Math.min(100, value / target * 100) : 0} aria-label="단백질 달성률" className={`h-1.5 flex-1 bg-[#E5ECE8] ${reached ? "[&_[data-slot=progress-indicator]]:bg-[#356859]" : "[&_[data-slot=progress-indicator]]:bg-[#9DB9AD]"}`} /><span className={`shrink-0 text-xs font-semibold tabular-nums ${reached ? "text-[#285A4D]" : "text-[#7A8580]"}`}>단백질 {Math.round(value)} / {target} g</span></div>
 }
 
 function ReviewList({ title, items, tone }: { title: string; items: string[]; tone: "good" | "avoid" | "limit" }) {

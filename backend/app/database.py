@@ -157,8 +157,10 @@ body_settings = Table(
     "body_settings", metadata,
     Column("id", Integer, primary_key=True),
     Column("height_cm", Float, nullable=False),
+    Column("daily_protein_target_g", Float, nullable=False, default=160.0),
     CheckConstraint("id = 1"),
     CheckConstraint("height_cm > 50 AND height_cm <= 250"),
+    CheckConstraint("daily_protein_target_g >= 0 AND daily_protein_target_g <= 500"),
 )
 
 weight_records = Table(
@@ -296,6 +298,16 @@ class Database:
             if "start_date" not in task_columns:
                 with self.engine.begin() as connection:
                     connection.exec_driver_sql("ALTER TABLE tasks ADD COLUMN start_date DATE")
+        if "body_settings" in inspect(self.engine).get_table_names():
+            body_columns = {
+                column["name"] for column in inspect(self.engine).get_columns("body_settings")
+            }
+            if "daily_protein_target_g" not in body_columns:
+                with self.engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE body_settings ADD COLUMN daily_protein_target_g "
+                        "FLOAT NOT NULL DEFAULT 160"
+                    )
         if "schedules" in inspect(self.engine).get_table_names():
             schedule_columns = {
                 column["name"] for column in inspect(self.engine).get_columns("schedules")

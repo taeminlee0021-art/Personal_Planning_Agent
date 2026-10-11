@@ -283,9 +283,10 @@ def test_schedule_status_validation_and_missing_schedule(client):
 
 
 def test_body_settings_and_weight_records(client):
-    assert client.get("/api/body/settings").json() == {"height_cm": 176.0}
-    changed = client.put("/api/body/settings", json={"height_cm": 175.5})
-    assert changed.status_code == 200 and changed.json() == {"height_cm": 175.5}
+    assert client.get("/api/body/settings").json() == {"height_cm": 176.0, "daily_protein_target_g": 160.0}
+    changed = client.put("/api/body/settings", json={"height_cm": 175.5, "daily_protein_target_g": 160})
+    assert changed.status_code == 200 and changed.json() == {"height_cm": 175.5, "daily_protein_target_g": 160.0}
+    assert client.put("/api/body/settings", json={"height_cm": 175.5, "daily_protein_target_g": 900}).status_code == 422
 
     created = client.post("/api/body/weights", json={
         "measured_on": NOW.date().isoformat(), "weight_kg": 72.4,

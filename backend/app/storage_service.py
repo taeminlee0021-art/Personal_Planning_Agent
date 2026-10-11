@@ -56,7 +56,7 @@ class DatabasePlanningService:
             if not repository.list(db.preferences):
                 repository.insert(db.preferences, {"id": 1, **Preferences().model_dump()})
             if not repository.list(db.body_settings):
-                repository.insert(db.body_settings, {"id": 1, "height_cm": 176.0})
+                repository.insert(db.body_settings, {"id": 1, **BodySettingsInput(height_cm=176.0).model_dump()})
             if not repository.list(db.workout_settings):
                 repository.insert(db.workout_settings, {"id": 1, **WorkoutSettingsInput().model_dump()})
 
@@ -390,14 +390,18 @@ class DatabasePlanningService:
 
     def get_body_settings(self):
         with self.database.transaction() as repository:
-            row = repository.get(db.body_settings, 1)
-            return {"height_cm": row["height_cm"]}
+            return self._body_settings(repository)
 
     def save_body_settings(self, value: BodySettingsInput):
         value = BodySettingsInput.model_validate(value.model_dump())
         with self.database.transaction(write=True) as repository:
-            row = repository.update(db.body_settings, 1, value.model_dump())
-            return {"height_cm": row["height_cm"]}
+            repository.update(db.body_settings, 1, value.model_dump())
+            return self._body_settings(repository)
+
+    @staticmethod
+    def _body_settings(repository):
+        row = repository.get(db.body_settings, 1)
+        return {"height_cm": row["height_cm"], "daily_protein_target_g": row["daily_protein_target_g"]}
 
     def list_weight_records(self):
         with self.database.transaction() as repository:
@@ -564,6 +568,7 @@ class DatabasePlanningService:
                 "recorded_days": recorded_days,
                 "recorded_day_count": len(recorded_days),
                 "height_cm": repository.get(db.body_settings, 1)["height_cm"],
+                "daily_protein_target_g": repository.get(db.body_settings, 1)["daily_protein_target_g"],
                 "latest_weight_kg": weights[-1]["weight_kg"] if weights else None,
                 "latest_weight_date": weights[-1]["measured_on"].isoformat() if weights else None,
                 "recent_weights": [{"date": row["measured_on"].isoformat(), "weight_kg": row["weight_kg"]}

@@ -155,6 +155,7 @@ export interface ScheduleDraft {
 
 export interface BodySettings {
   height_cm: number
+  daily_protein_target_g: number
 }
 
 export interface WeightRecord {
