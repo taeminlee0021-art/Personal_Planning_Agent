@@ -401,7 +401,11 @@ class DatabasePlanningService:
     @staticmethod
     def _body_settings(repository):
         row = repository.get(db.body_settings, 1)
-        return {"height_cm": row["height_cm"], "daily_protein_target_g": row["daily_protein_target_g"]}
+        return {
+            "height_cm": row["height_cm"],
+            "daily_protein_target_g": row["daily_protein_target_g"],
+            "daily_calorie_target_kcal": row["daily_calorie_target_kcal"],
+        }
 
     def list_weight_records(self):
         with self.database.transaction() as repository:
@@ -569,6 +573,8 @@ class DatabasePlanningService:
                 "recorded_day_count": len(recorded_days),
                 "height_cm": repository.get(db.body_settings, 1)["height_cm"],
                 "daily_protein_target_g": repository.get(db.body_settings, 1)["daily_protein_target_g"],
+                "daily_calorie_target_kcal": repository.get(db.body_settings, 1)["daily_calorie_target_kcal"],
+                "daily_totals": self._daily_totals(meals),
                 "latest_weight_kg": weights[-1]["weight_kg"] if weights else None,
                 "latest_weight_date": weights[-1]["measured_on"].isoformat() if weights else None,
                 "recent_weights": [{"date": row["measured_on"].isoformat(), "weight_kg": row["weight_kg"]}
@@ -589,6 +595,22 @@ class DatabasePlanningService:
                     db.workout_sessions, db.workout_sessions.c.week_start == week_start,
                 ), key=lambda item: item["session_date"])],
             }
+
+    @staticmethod
+    def _daily_totals(meals):
+        """Deterministic per-day sums; unresolved entries are counted but not summed."""
+        days = {}
+        for row in meals:
+            day = days.setdefault(row["eaten_on"].isoformat(), {
+                "date": row["eaten_on"].isoformat(), "meals_logged": 0,
+                "calories_kcal": 0.0, "protein_g": 0.0, "unresolved_entries": 0,
+            })
+            day["meals_logged"] += 1
+            if row["calories_kcal"] is None or row["protein_g"] is None:
+                day["unresolved_entries"] += 1
+            day["calories_kcal"] += row["calories_kcal"] or 0
+            day["protein_g"] += row["protein_g"] or 0
+        return [days[key] for key in sorted(days)]
 
     def save_diet_analysis(self, analysis: DietAnalysis):
         analysis = DietAnalysis.model_validate(analysis)
@@ -638,7 +660,10 @@ class DatabasePlanningService:
             values = {
                 "week_start": week_start, "summary": analysis.summary,
                 "good_points": analysis.good_points, "avoid_foods": analysis.avoid_foods,
-                "limit_foods": analysis.limit_foods, "total_calories_kcal": total_calories,
+                "limit_foods": analysis.limit_foods,
+                "biggest_issue": analysis.biggest_issue,
+                "next_week_actions": analysis.next_week_actions,
+                "total_calories_kcal": total_calories,
                 "average_daily_calories_kcal": total_calories / 7,
                 "total_protein_g": total_protein,
                 "average_daily_protein_g": total_protein / 7,

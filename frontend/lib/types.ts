@@ -156,6 +156,7 @@ export interface ScheduleDraft {
 export interface BodySettings {
   height_cm: number
   daily_protein_target_g: number
+  daily_calorie_target_kcal: number
 }
 
 export interface WeightRecord {
@@ -206,6 +207,8 @@ export interface DietReview {
   good_points: string[]
   avoid_foods: string[]
   limit_foods: string[]
+  biggest_issue: string | null
+  next_week_actions: string[] | null
   total_calories_kcal: number
   average_daily_calories_kcal: number
   total_protein_g: number

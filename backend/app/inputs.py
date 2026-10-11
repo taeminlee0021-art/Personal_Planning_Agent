@@ -64,6 +64,7 @@ class TodayItemInput(Model):
 class BodySettingsInput(Model):
     height_cm: float = Field(gt=50, le=250, allow_inf_nan=False)
     daily_protein_target_g: float = Field(default=160, ge=0, le=500, allow_inf_nan=False)
+    daily_calorie_target_kcal: float = Field(default=1800, ge=0, le=10000, allow_inf_nan=False)
 
 
 class WeightRecordInput(Model):

@@ -55,11 +55,15 @@ def test_gpt_estimate_is_validated_saved_and_reused(tmp_path):
                 entry_id=meal["id"], calories_kcal=580, protein_g=16,
             )],
             summary="전체 열량과 채소 섭취를 함께 점검하세요. 영양값은 추정치입니다.",
+            biggest_issue="9월 13일 저녁 라면 1봉으로 단백질 대비 열량이 높았습니다.",
+            next_week_actions=["저녁 라면 대신 두부 반 모와 달걀 2개로 바꾸기"],
             good_points=["식사를 빠짐없이 기록했습니다."],
             avoid_foods=["당이 많은 음료"],
             limit_foods=["라면"],
         ))
         assert review["total_calories_kcal"] == 580
+        assert review["next_week_actions"] == ["저녁 라면 대신 두부 반 모와 달걀 2개로 바꾸기"]
+        assert review["biggest_issue"].startswith("9월 13일")
         assert service.list_meal_entries()[0]["nutrition_source"] == "GPT"
         prompts = {item["title"]: item for item in service.list_today_items()}
         assert prompts["주간 식단 평가"]["status"] == "COMPLETED"
@@ -87,8 +91,9 @@ def test_diet_context_includes_dated_weights_and_portion_guard(tmp_path):
         assert payload["latest_weight_kg"] == 72.4
         assert payload["latest_weight_date"] == "2026-09-13"
         assert payload["recent_weights"] == [{"date": "2026-09-13", "weight_kg": 72.4}]
-        assert "130 g cooked rice" in INSTRUCTIONS
-        assert "Missing dates or meals mean unknown intake" in INSTRUCTIONS
+        assert "stated portion and unit literally" in INSTRUCTIONS
+        assert "incomplete records, not fasting" in INSTRUCTIONS
+        assert "daily_calorie_target_kcal" in INSTRUCTIONS
     finally:
         database.close()
 
@@ -156,8 +161,16 @@ def test_existing_body_settings_gain_protein_target_and_payload_includes_it(tmp_
     database = db.Database(path)
     try:
         service = DatabasePlanningService(database, now=SUNDAY)
-        assert service.get_body_settings() == {"height_cm": 171.0, "daily_protein_target_g": 160.0}
+        assert service.get_body_settings() == {
+            "height_cm": 171.0, "daily_protein_target_g": 160.0, "daily_calorie_target_kcal": 1800.0}
         service.save_meal_entry(MealEntryInput(meal_type="LUNCH", food_name="두부", calories_kcal=120, protein_g=12))
-        assert service.diet_analysis_payload()["daily_protein_target_g"] == 160.0
+        service.save_meal_entry(MealEntryInput(meal_type="DINNER", food_name="김밥 한 줄"))
+        payload = service.diet_analysis_payload()
+        assert payload["daily_protein_target_g"] == 160.0
+        assert payload["daily_calorie_target_kcal"] == 1800.0
+        assert payload["daily_totals"] == [{
+            "date": "2026-09-13", "meals_logged": 2, "calories_kcal": 120.0,
+            "protein_g": 12.0, "unresolved_entries": 1,
+        }]
     finally:
         database.close()

@@ -33,7 +33,7 @@ function nutrition(value: number | null, unit: string) {
 
 export type HealthTab = "workout" | "diet" | "weight"
 
-export function WeightView({ loading, tab, onTabChange, settings, records, meals, foods, review, workoutWeek, workoutSettings, saveWeight, saveHeight, saveProteinTarget, saveMeal, removeMeal, analyzeDiet, saveWorkout, addWorkout, removeWorkout, planWorkouts, saveWorkoutSettings }: {
+export function WeightView({ loading, tab, onTabChange, settings, records, meals, foods, review, workoutWeek, workoutSettings, saveWeight, saveHeight, saveTargets, saveMeal, removeMeal, analyzeDiet, saveWorkout, addWorkout, removeWorkout, planWorkouts, saveWorkoutSettings }: {
   tab: HealthTab
   onTabChange: (tab: HealthTab) => void
   workoutWeek: WorkoutWeek | null
@@ -51,7 +51,7 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
   review: DietReview | null
   saveWeight: (weight: number, measuredOn: string) => Promise<void>
   saveHeight: (height: number) => Promise<void>
-  saveProteinTarget: (target: number) => Promise<void>
+  saveTargets: (protein: number, calories: number) => Promise<void>
   saveMeal: (meal: MealDraft) => Promise<void>
   removeMeal: (id: number) => Promise<void>
   analyzeDiet: () => Promise<void>
@@ -60,6 +60,7 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
   const [measuredOn, setMeasuredOn] = useState(() => dateKey(new Date()))
   const [height, setHeight] = useState(String(settings.height_cm))
   const [proteinTarget, setProteinTarget] = useState(String(settings.daily_protein_target_g))
+  const [calorieTarget, setCalorieTarget] = useState(String(settings.daily_calorie_target_kcal))
   const [meal, setMeal] = useState<MealDraft>(emptyMeal)
   const [saving, setSaving] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -79,8 +80,21 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
     days[item.eaten_on] = (days[item.eaten_on] ?? 0) + (item.protein_g ?? 0)
     return days
   }, {}), [meals])
+  const caloriesByDay = useMemo(() => meals.reduce<Record<string, number>>((days, item) => {
+    days[item.eaten_on] = (days[item.eaten_on] ?? 0) + (item.calories_kcal ?? 0)
+    return days
+  }, {}), [meals])
   const todayProtein = proteinByDay[todayKey] ?? 0
   const target = settings.daily_protein_target_g
+  const calorieTargetValue = settings.daily_calorie_target_kcal
+  const loggedDays = Object.keys(proteinByDay)
+  const weekStats = {
+    days: loggedDays.length,
+    proteinHit: loggedDays.filter((day) => target > 0 && (proteinByDay[day] ?? 0) >= target).length,
+    calorieOver: loggedDays.filter((day) => calorieTargetValue > 0 && (caloriesByDay[day] ?? 0) > calorieTargetValue).length,
+    avgProtein: loggedDays.length ? totals.protein / loggedDays.length : 0,
+    avgCalories: loggedDays.length ? totals.calories / loggedDays.length : 0,
+  }
   const grouped = useMemo(() => Object.entries(meals.reduce<Record<string, MealEntry[]>>((days, item) => {
     ;(days[item.eaten_on] ??= []).push(item)
     return days
@@ -114,10 +128,12 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
     try { await saveMeal({ ...meal, food_name: meal.food_name.trim() }); setMeal(emptyMeal()) } finally { setSaving(false) }
   }
 
-  async function updateProteinTarget() {
-    const value = Number(proteinTarget); if (!Number.isFinite(value) || value < 0 || value > 500) return
-    setSaving(true); try { await saveProteinTarget(value) } finally { setSaving(false) }
+  async function updateTargets() {
+    const protein = Number(proteinTarget); const calories = Number(calorieTarget)
+    if (!Number.isFinite(protein) || protein < 0 || protein > 500 || !Number.isFinite(calories) || calories < 0 || calories > 10000) return
+    setSaving(true); try { await saveTargets(protein, calories) } finally { setSaving(false) }
   }
+  const targetsUnchanged = Number(proteinTarget) === settings.daily_protein_target_g && Number(calorieTarget) === settings.daily_calorie_target_kcal
 
   async function updateHeight() {
     const value = Number(height); if (!Number.isFinite(value) || value <= 50 || value > 250) return
@@ -160,11 +176,22 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
         </div>
 
         <section className="rounded-[1.3rem] border border-[#CAD9D1] bg-[#F3F8F5] p-5 sm:p-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h3 className="flex items-center gap-2 font-bold text-[#263A33]"><Sparkles className="size-5 text-[#356859]" />이번 주 식단 평가</h3><p className="mt-2 text-sm leading-6 text-[#64736C]">기록된 식사량과 최근 몸무게를 함께 참고합니다. 빠진 날짜나 식사는 먹지 않은 것으로 간주하지 않습니다.</p></div><Button type="button" disabled={analyzing || meals.length === 0} onClick={() => void runAnalysis()} className="h-11 shrink-0 bg-[#183D35] hover:bg-[#28564A]">{analyzing ? <LoaderCircle className="animate-spin" /> : <Sparkles />}{analyzing ? "평가 중" : "GPT로 평가하기"}</Button></div>
-          {review && <div className="mt-5 grid gap-4 border-t border-[#D8E3DD] pt-5 md:grid-cols-3"><div className="md:col-span-3"><p className="leading-7 text-[#344A42]">{review.summary}</p><p className="mt-2 text-sm font-medium text-[#66766F]">기록된 식사 합계 {Math.round(review.total_calories_kcal)} kcal · 단백질 {review.total_protein_g.toFixed(1)}g</p></div><ReviewList title="좋았던 점" items={review.good_points} tone="good" /><ReviewList title="조절을 고려할 음식" items={review.avoid_foods} tone="avoid" /><ReviewList title="양을 살펴볼 음식" items={review.limit_foods} tone="limit" /></div>}
+          {review && <div className="mt-5 space-y-4 border-t border-[#D8E3DD] pt-5">
+            <p className="leading-7 text-[#344A42]">{review.summary}</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Stat label="기록한 날" value={`${weekStats.days}일`} />
+              <Stat label="단백질 목표 달성" value={`${weekStats.proteinHit} / ${weekStats.days}일`} good={weekStats.days > 0 && weekStats.proteinHit === weekStats.days} />
+              <Stat label="일평균 단백질" value={`${Math.round(weekStats.avgProtein)} g`} sub={`목표 ${target} g`} good={weekStats.avgProtein >= target} />
+              <Stat label="일평균 칼로리" value={`${Math.round(weekStats.avgCalories)} kcal`} sub={`목표 ${calorieTargetValue} kcal · 초과 ${weekStats.calorieOver}일`} good={weekStats.avgCalories <= calorieTargetValue} />
+            </div>
+            {review.biggest_issue && <div className="rounded-xl border border-[#E5C2B7] bg-[#FFF8F5] p-4"><h4 className="font-bold text-[#7E4A39]">이번 주 가장 큰 문제</h4><p className="mt-2 text-sm leading-6 text-[#5F4A43]">{review.biggest_issue}</p></div>}
+            {review.next_week_actions && review.next_week_actions.length > 0 && <div className="rounded-xl border border-[#9DB9AD] bg-[#EEF6F1] p-4"><h4 className="font-bold text-[#285A4D]">다음 주에 바꿀 것</h4><ol className="mt-2 space-y-2 text-sm leading-6 text-[#344A42]">{review.next_week_actions.map((item, index) => <li key={item} className="flex gap-2"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#356859] text-xs font-bold text-white">{index + 1}</span><span>{item}</span></li>)}</ol></div>}
+            <div className="grid gap-4 md:grid-cols-3"><ReviewList title="좋았던 점" items={review.good_points} tone="good" /><ReviewList title="피하는 게 나은 음식" items={review.avoid_foods} tone="avoid" /><ReviewList title="양을 줄일 음식" items={review.limit_foods} tone="limit" /></div>
+          </div>}
           <p className="mt-4 text-xs leading-5 text-[#7B8983]">GPT 영양값은 일반적인 양을 바탕으로 한 추정치이며, BMI와 식단 평가는 의료 진단을 대신하지 않습니다.</p>
         </section>
 
-        <section className="rounded-[1.3rem] border bg-white p-5 sm:p-6"><h3 className="font-bold text-[#263A33]">하루 단백질 목표</h3><p className="mt-1 text-sm text-[#7A8580]">날짜별 달성도와 GPT 식단 평가가 이 값을 기준으로 합니다.</p><div className="mt-4 flex items-center gap-2"><Input aria-label="하루 단백질 목표 그램" type="number" min={0} max={500} step="1" inputMode="numeric" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} className="h-11 max-w-40" /><span className="shrink-0 text-sm text-[#66736D]">g / 일</span><Button type="button" variant="outline" disabled={saving || Number(proteinTarget) === settings.daily_protein_target_g} onClick={() => void updateProteinTarget()} className="h-11">저장</Button></div></section>
+        <section className="rounded-[1.3rem] border bg-white p-5 sm:p-6"><h3 className="font-bold text-[#263A33]">하루 목표</h3><p className="mt-1 text-sm text-[#7A8580]">날짜별 달성도와 GPT 식단 평가가 이 값을 기준으로 합니다.</p><div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><label className="grid gap-1.5 text-sm font-medium">단백질 (g / 일)<Input aria-label="하루 단백질 목표 그램" type="number" min={0} max={500} step="1" inputMode="numeric" value={proteinTarget} onChange={(e) => setProteinTarget(e.target.value)} className="h-11" /></label><label className="grid gap-1.5 text-sm font-medium">칼로리 (kcal / 일)<Input aria-label="하루 칼로리 목표" type="number" min={0} max={10000} step="10" inputMode="numeric" value={calorieTarget} onChange={(e) => setCalorieTarget(e.target.value)} className="h-11" /></label><Button type="button" variant="outline" disabled={saving || targetsUnchanged} onClick={() => void updateTargets()} className="h-11">저장</Button></div></section>
       </TabsContent>
 
       <TabsContent value="weight" className="space-y-5">
@@ -180,6 +207,10 @@ export function WeightView({ loading, tab, onTabChange, settings, records, meals
       </TabsContent>
     </Tabs>
   </section>
+}
+
+function Stat({ label, value, sub, good }: { label: string; value: string; sub?: string; good?: boolean }) {
+  return <div className="rounded-xl border border-[#DDE5E0] bg-white p-3"><p className="text-xs font-semibold text-[#77827D]">{label}</p><p className={`mt-1 text-lg font-bold ${good ? "text-[#285A4D]" : "text-[#253A32]"}`}>{value}</p>{sub && <p className="mt-0.5 text-xs text-[#8A948F]">{sub}</p>}</div>
 }
 
 function ProteinBar({ value, target }: { value: number; target: number }) {

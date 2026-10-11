@@ -46,7 +46,7 @@ export function PlannerApp() {
   const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([])
   const [todayItems, setTodayItems] = useState<TodayItem[]>([])
   const [weekTodayItems, setWeekTodayItems] = useState<TodayItem[]>([])
-  const [bodySettings, setBodySettings] = useState<BodySettings>({ height_cm: 176, daily_protein_target_g: 160 })
+  const [bodySettings, setBodySettings] = useState<BodySettings>({ height_cm: 176, daily_protein_target_g: 160, daily_calorie_target_kcal: 1800 })
   const [weightRecords, setWeightRecords] = useState<WeightRecord[]>([])
   const [mealEntries, setMealEntries] = useState<MealEntry[]>([])
   const [foodNutrition, setFoodNutrition] = useState<FoodNutrition[]>([])
@@ -268,9 +268,9 @@ export function PlannerApp() {
     try { setBodySettings(await api.updateBodySettings({ ...bodySettings, height_cm: height })); toast.success("키를 저장했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "키를 저장하지 못했습니다."); throw error }
   }
-  async function saveProteinTarget(target: number) {
-    try { setBodySettings(await api.updateBodySettings({ ...bodySettings, daily_protein_target_g: target })); toast.success("하루 단백질 목표를 저장했습니다.") }
-    catch (error) { toast.error(error instanceof Error ? error.message : "단백질 목표를 저장하지 못했습니다."); throw error }
+  async function saveTargets(protein: number, calories: number) {
+    try { setBodySettings(await api.updateBodySettings({ ...bodySettings, daily_protein_target_g: protein, daily_calorie_target_kcal: calories })); toast.success("하루 목표를 저장했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "목표를 저장하지 못했습니다."); throw error }
   }
   async function saveMeal(value: MealDraft) {
     try {
@@ -371,7 +371,7 @@ export function PlannerApp() {
         {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} workouts={(workoutWeek?.sessions ?? []).filter((item) => item.session_date === dateKey(new Date()))} toggleWorkout={toggleWorkout} openHealth={openHealth} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
         {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} onTaskSaved={onTaskSaved} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}
         {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} workouts={workoutWeek?.sessions ?? []} onScheduleSaved={onScheduleSaved} removeSchedule={removeSchedule} togglePlan={togglePlan} toggleSchedule={toggleSchedule} toggleTodayItem={toggleTodayItem} toggleWorkout={toggleWorkout} />}
-        {view === "weight" && <WeightView key={`${bodySettings.height_cm}-${bodySettings.daily_protein_target_g}`} loading={loading} tab={healthTab} onTabChange={setHealthTab} workoutWeek={workoutWeek} workoutSettings={workoutSettings} saveWorkout={saveWorkout} addWorkout={addWorkout} removeWorkout={removeWorkout} planWorkouts={planWorkouts} saveWorkoutSettings={saveWorkoutSettings} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveProteinTarget={saveProteinTarget} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
+        {view === "weight" && <WeightView key={`${bodySettings.height_cm}-${bodySettings.daily_protein_target_g}-${bodySettings.daily_calorie_target_kcal}`} loading={loading} tab={healthTab} onTabChange={setHealthTab} workoutWeek={workoutWeek} workoutSettings={workoutSettings} saveWorkout={saveWorkout} addWorkout={addWorkout} removeWorkout={removeWorkout} planWorkouts={planWorkouts} saveWorkoutSettings={saveWorkoutSettings} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveTargets={saveTargets} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
         {view === "agent" && <AgentView loading={loading} message={message} setMessage={setMessage} sending={sending} agentError={agentError} latestResponse={latestResponse} actions={actions} deciding={deciding} sendMessage={sendMessage} decide={decide} />}
         {view === "settings" && <SettingsView loading={loading} recurringTasks={recurringTasks} preferences={preferences} setPreferences={setPreferences} onRecurringSaved={onRecurringSaved} toggleRecurringTask={toggleRecurringTask} removeRecurringTask={removeRecurringTask} savePreferences={savePreferences} />}
       </div>

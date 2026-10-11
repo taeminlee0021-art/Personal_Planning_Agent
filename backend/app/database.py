@@ -158,9 +158,11 @@ body_settings = Table(
     Column("id", Integer, primary_key=True),
     Column("height_cm", Float, nullable=False),
     Column("daily_protein_target_g", Float, nullable=False, default=160.0),
+    Column("daily_calorie_target_kcal", Float, nullable=False, default=1800.0),
     CheckConstraint("id = 1"),
     CheckConstraint("height_cm > 50 AND height_cm <= 250"),
     CheckConstraint("daily_protein_target_g >= 0 AND daily_protein_target_g <= 500"),
+    CheckConstraint("daily_calorie_target_kcal >= 0 AND daily_calorie_target_kcal <= 10000"),
 )
 
 weight_records = Table(
@@ -217,6 +219,8 @@ diet_reviews = Table(
     Column("good_points", JSON, nullable=False),
     Column("avoid_foods", JSON, nullable=False),
     Column("limit_foods", JSON, nullable=False),
+    Column("biggest_issue", String(600)),
+    Column("next_week_actions", JSON),
     Column("total_calories_kcal", Float, nullable=False),
     Column("average_daily_calories_kcal", Float, nullable=False),
     Column("total_protein_g", Float, nullable=False),
@@ -307,6 +311,25 @@ class Database:
                     connection.exec_driver_sql(
                         "ALTER TABLE body_settings ADD COLUMN daily_protein_target_g "
                         "FLOAT NOT NULL DEFAULT 160"
+                    )
+            if "daily_calorie_target_kcal" not in body_columns:
+                with self.engine.begin() as connection:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE body_settings ADD COLUMN daily_calorie_target_kcal "
+                        "FLOAT NOT NULL DEFAULT 1800"
+                    )
+        if "diet_reviews" in inspect(self.engine).get_table_names():
+            review_columns = {
+                column["name"] for column in inspect(self.engine).get_columns("diet_reviews")
+            }
+            with self.engine.begin() as connection:
+                if "biggest_issue" not in review_columns:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE diet_reviews ADD COLUMN biggest_issue VARCHAR(600)"
+                    )
+                if "next_week_actions" not in review_columns:
+                    connection.exec_driver_sql(
+                        "ALTER TABLE diet_reviews ADD COLUMN next_week_actions JSON"
                     )
         if "schedules" in inspect(self.engine).get_table_names():
             schedule_columns = {

@@ -227,9 +227,11 @@ def test_sunday_weight_prompt_record_and_height(tmp_path):
     sunday = NOW + timedelta(days=6)
     try:
         service = DatabasePlanningService(database, now=sunday)
-        assert service.get_body_settings() == {"height_cm": 176.0, "daily_protein_target_g": 160.0}
-        assert service.save_body_settings(BodySettingsInput(height_cm=175.5, daily_protein_target_g=150)) == {
-            "height_cm": 175.5, "daily_protein_target_g": 150.0}
+        assert service.get_body_settings() == {
+            "height_cm": 176.0, "daily_protein_target_g": 160.0, "daily_calorie_target_kcal": 1800.0}
+        assert service.save_body_settings(BodySettingsInput(
+            height_cm=175.5, daily_protein_target_g=150, daily_calorie_target_kcal=1700)) == {
+            "height_cm": 175.5, "daily_protein_target_g": 150.0, "daily_calorie_target_kcal": 1700.0}
 
         prompts = [item for item in service.list_today_items() if item["title"] == "몸무게 기록"]
         assert len(prompts) == 1 and prompts[0]["status"] == "TODO"

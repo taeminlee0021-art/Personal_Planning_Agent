@@ -148,6 +148,8 @@ class DietReviewResponse(Model):
     good_points: list[str]
     avoid_foods: list[str]
     limit_foods: list[str]
+    biggest_issue: str | None = None
+    next_week_actions: list[str] | None = None
     total_calories_kcal: float
     average_daily_calories_kcal: float
     total_protein_g: float

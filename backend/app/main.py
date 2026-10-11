@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException
 from app.agent import AgentExecutionError, PlanningAgent
 from app.api.routes import router
 from app.database import Database
-from app.diet import analyze_diet
+from app.diet import DEFAULT_DIET_MODEL, analyze_diet
 from app.workout import plan_workouts
 from app.errors import ConflictError, NotFoundError
 from app.storage_service import DatabasePlanningService
@@ -75,16 +75,18 @@ def run_agent(service, message):
 
 
 def run_diet(payload):
-    return run_structured(analyze_diet, payload, "식단 평가")
+    # The weekly review runs once a week, so a stronger model is affordable here.
+    model = os.getenv("OPENAI_DIET_MODEL", "").strip() or DEFAULT_DIET_MODEL
+    return run_structured(analyze_diet, payload, "식단 평가", model=model)
 
 
 def run_workout(payload):
     return run_structured(plan_workouts, payload, "운동 부위 계획")
 
 
-def run_structured(task, payload, label):
+def run_structured(task, payload, label, model=None):
     key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = os.getenv("OPENAI_MODEL", "").strip()
+    model = model or os.getenv("OPENAI_MODEL", "").strip()
     if not key or not model:
         raise AgentUnavailable()
     try:
