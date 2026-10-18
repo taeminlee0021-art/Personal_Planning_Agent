@@ -1,4 +1,4 @@
-import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek, GratitudeEntry, GratitudeDraft } from "@/lib/types"
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -56,6 +56,10 @@ export const api = {
   deleteMealEntry: (id: number) => request<void>(`/body/meals/${id}`, { method: "DELETE" }),
   currentDietReview: () => request<DietReview | null>("/body/diet-review/current"),
   analyzeDiet: () => request<DietReview>("/body/diet-review/current/analyze", { method: "POST", body: "{}" }),
+  gratitudeEntries: () => request<GratitudeEntry[]>("/gratitude"),
+  createGratitudeEntry: (value: GratitudeDraft) => request<GratitudeEntry>("/gratitude", { method: "POST", body: JSON.stringify(value) }),
+  updateGratitudeEntry: (id: number, value: GratitudeDraft) => request<GratitudeEntry>(`/gratitude/${id}`, { method: "PUT", body: JSON.stringify(value) }),
+  deleteGratitudeEntry: (id: number) => request<void>(`/gratitude/${id}`, { method: "DELETE" }),
   workoutSettings: () => request<WorkoutSettings>("/body/workout-settings"),
   updateWorkoutSettings: (value: WorkoutSettings) => request<WorkoutSettings>("/body/workout-settings", { method: "PUT", body: JSON.stringify(value) }),
   workoutWeek: () => request<WorkoutWeek>("/body/workouts/week"),

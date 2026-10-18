@@ -1,10 +1,10 @@
 "use client"
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
-import { CalendarDays, ListTodo, LoaderCircle, MessageCircleMore, RotateCcw, Scale, Settings2, Sparkles, SunMedium } from "lucide-react"
+import { CalendarDays, HeartHandshake, ListTodo, LoaderCircle, MessageCircleMore, RotateCcw, Scale, Settings2, Sparkles, SunMedium } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, Task, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek, GratitudeDraft, GratitudeEntry } from "@/lib/types"
 import { dateKey, defaultPreferences, emptyTask, formatDate, weekDays, type View } from "@/components/planner/helpers"
 import { TodayView } from "@/components/planner/today-view"
 import { TasksView } from "@/components/planner/tasks-view"
@@ -12,22 +12,24 @@ import { WeekView } from "@/components/planner/week-view"
 import { AgentView } from "@/components/planner/agent-view"
 import { SettingsView } from "@/components/planner/settings-view"
 import { WeightView, type HealthTab } from "@/components/planner/weight-view"
+import { GratitudeView } from "@/components/planner/gratitude-view"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Toaster } from "@/components/ui/sonner"
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider } from "@/components/ui/sidebar"
 
-const navigation: { id: View; label: string; icon: typeof SunMedium }[] = [
+const navigation: { id: View; label: string; short?: string; icon: typeof SunMedium }[] = [
   { id: "today", label: "오늘", icon: SunMedium },
   { id: "tasks", label: "할 일", icon: ListTodo },
-  { id: "week", label: "주간 계획", icon: CalendarDays },
+  { id: "week", label: "주간 계획", short: "주간", icon: CalendarDays },
   { id: "weight", label: "건강", icon: Scale },
+  { id: "gratitude", label: "감사일기", short: "감사", icon: HeartHandshake },
   { id: "agent", label: "플래너", icon: MessageCircleMore },
   { id: "settings", label: "설정", icon: Settings2 },
 ]
 
-type RefreshPart = "tasks" | "todayPlans" | "weekPlans" | "schedules" | "preferences" | "actions" | "recurring" | "todayItems" | "weekTodayItems" | "bodySettings" | "weights" | "meals" | "foods" | "dietReview" | "workoutWeek" | "workoutSettings"
-const allParts: RefreshPart[] = ["tasks", "todayPlans", "weekPlans", "schedules", "preferences", "actions", "recurring", "todayItems", "weekTodayItems", "bodySettings", "weights", "meals", "foods", "dietReview", "workoutWeek", "workoutSettings"]
+type RefreshPart = "tasks" | "todayPlans" | "weekPlans" | "schedules" | "preferences" | "actions" | "recurring" | "todayItems" | "weekTodayItems" | "bodySettings" | "weights" | "meals" | "foods" | "dietReview" | "workoutWeek" | "workoutSettings" | "gratitude"
+const allParts: RefreshPart[] = ["tasks", "todayPlans", "weekPlans", "schedules", "preferences", "actions", "recurring", "todayItems", "weekTodayItems", "bodySettings", "weights", "meals", "foods", "dietReview", "workoutWeek", "workoutSettings", "gratitude"]
 
 function upsertById<T extends { id: number }>(current: T[], saved: T): T[] {
   return current.some((item) => item.id === saved.id)
@@ -54,6 +56,7 @@ export function PlannerApp() {
   const [workoutWeek, setWorkoutWeek] = useState<WorkoutWeek | null>(null)
   const [workoutSettings, setWorkoutSettings] = useState<WorkoutSettings>({ weekdays: [0, 2, 4, 6], strength_minutes: 30, cardio_minutes: 30 })
   const [healthTab, setHealthTab] = useState<HealthTab>("workout")
+  const [gratitudeEntries, setGratitudeEntries] = useState<GratitudeEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [serverState, setServerState] = useState<"checking" | "ready" | "failed">("checking")
   const [loadError, setLoadError] = useState("")
@@ -82,6 +85,7 @@ export function PlannerApp() {
         parts.includes("dietReview") && api.currentDietReview().then(setDietReview),
         parts.includes("workoutWeek") && api.workoutWeek().then(setWorkoutWeek),
         parts.includes("workoutSettings") && api.workoutSettings().then(setWorkoutSettings),
+        parts.includes("gratitude") && api.gratitudeEntries().then(setGratitudeEntries),
       ])
       setLoadError("")
     } catch (error) { setLoadError(error instanceof Error ? error.message : "데이터를 불러오지 못했습니다.") }
@@ -182,7 +186,7 @@ export function PlannerApp() {
       completed: weekPlans.filter((plan) => plan.status === "COMPLETED").length
         + weeklySchedules.filter((item) => item.completed).length
         + unmatchedChecklist.filter((item) => item.status === "COMPLETED").length
-        + weekTodayItems.filter((item) => item.source === "RECURRING" && item.status === "COMPLETED").length
+        + weekTodayItems.filter((item) => item.source === "RECURRING" && item.recurrence_id !== null && item.status === "COMPLETED").length
         + workouts.filter((item) => item.completed).length,
     }
   }, [recurringTasks, schedules, weekPlans, weekTodayItems, workoutWeek])
@@ -314,6 +318,19 @@ export function PlannerApp() {
     catch (error) { toast.error(error instanceof Error ? error.message : "운동 기본값을 저장하지 못했습니다.") }
   }
   function openHealth(tab: HealthTab) { setHealthTab(tab); setView("weight") }
+  const sortGratitude = (entries: GratitudeEntry[]) => [...entries].sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.id - a.id)
+  async function addGratitude(value: GratitudeDraft) {
+    try { const saved = await api.createGratitudeEntry(value); setGratitudeEntries((current) => sortGratitude([...current, saved])); toast.success("감사일기를 저장했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "감사일기를 저장하지 못했습니다."); throw error }
+  }
+  async function editGratitude(id: number, value: GratitudeDraft) {
+    try { const saved = await api.updateGratitudeEntry(id, value); setGratitudeEntries((current) => sortGratitude(upsertById(current, saved))); toast.success("감사일기를 수정했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "감사일기를 수정하지 못했습니다."); throw error }
+  }
+  async function removeGratitude(id: number) {
+    try { await api.deleteGratitudeEntry(id); setGratitudeEntries((current) => current.filter((item) => item.id !== id)); toast.success("감사일기를 삭제했습니다.") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "삭제하지 못했습니다.") }
+  }
   async function analyzeDiet() {
     try { setDietReview(await api.analyzeDiet()); void refresh(["todayItems", "weekTodayItems"]); toast.success("이번 주 식단 평가를 완료했습니다.") }
     catch (error) { toast.error(error instanceof Error ? error.message : "식단을 평가하지 못했습니다."); throw error }
@@ -368,16 +385,17 @@ export function PlannerApp() {
       {loading && serverState === "checking" && <div role="status" aria-live="polite" className="mx-5 mt-5 flex items-center gap-3 rounded-xl border border-[#C9D8D0] bg-[#F2F8F4] px-4 py-3 text-sm text-[#315B4D] md:mx-9"><LoaderCircle className="size-5 shrink-0 animate-spin" /><div><p className="font-semibold">서버를 준비하는 중입니다</p><p className="mt-0.5 text-[#63756E]">무료 서버가 다시 시작되는 데 최대 1~2분 정도 걸릴 수 있습니다. 이 화면에서 잠시 기다려 주세요.</p></div></div>}
       {loadError && <div role="alert" className="mx-5 mt-5 flex items-center justify-between gap-3 rounded-xl border border-[#E7C9C0] bg-[#FFF5F1] px-4 py-3 text-sm text-[#8A4634] md:mx-9"><span>{loadError}</span><Button variant="ghost" size="sm" onClick={() => void initialize()}><RotateCcw />다시 시도</Button></div>}
       <div className="mx-auto w-full max-w-7xl p-5 md:p-9">
-        {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} workouts={(workoutWeek?.sessions ?? []).filter((item) => item.session_date === dateKey(new Date()))} toggleWorkout={toggleWorkout} openHealth={openHealth} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
+        {view === "today" && <TodayView loading={loading} items={todayItems} plans={todayPlans} schedules={schedules.filter((item) => dateKey(item.start_datetime) === dateKey(new Date()))} weekPlans={weekPlans} tasks={tasks} openAgent={() => setView("agent")} workouts={(workoutWeek?.sessions ?? []).filter((item) => item.session_date === dateKey(new Date()))} toggleWorkout={toggleWorkout} openHealth={openHealth} openGratitude={() => setView("gratitude")} todayGratitude={gratitudeEntries.filter((entry) => entry.entry_date === dateKey(new Date()))} addGratitude={addGratitude} addItem={addTodayItem} toggleItem={toggleTodayItem} togglePlan={togglePlan} toggleSchedule={toggleSchedule} removeItem={removeTodayItem} reorderItems={reorderTodayItems} />}
         {view === "tasks" && <TasksView loading={loading} tasks={tasks} todayItems={todayItems} onTaskSaved={onTaskSaved} toggleTask={toggleTask} removeTask={removeTask} addTaskToToday={addTaskToToday} />}
         {view === "week" && <WeekView loading={loading} plans={weekPlans} schedules={schedules} recurringTasks={recurringTasks} weekTodayItems={weekTodayItems} workouts={workoutWeek?.sessions ?? []} onScheduleSaved={onScheduleSaved} removeSchedule={removeSchedule} togglePlan={togglePlan} toggleSchedule={toggleSchedule} toggleTodayItem={toggleTodayItem} toggleWorkout={toggleWorkout} />}
         {view === "weight" && <WeightView key={`${bodySettings.height_cm}-${bodySettings.daily_protein_target_g}-${bodySettings.daily_calorie_target_kcal}`} loading={loading} tab={healthTab} onTabChange={setHealthTab} workoutWeek={workoutWeek} workoutSettings={workoutSettings} saveWorkout={saveWorkout} addWorkout={addWorkout} removeWorkout={removeWorkout} planWorkouts={planWorkouts} saveWorkoutSettings={saveWorkoutSettings} settings={bodySettings} records={weightRecords} meals={mealEntries} foods={foodNutrition} review={dietReview} saveWeight={saveWeight} saveHeight={saveHeight} saveTargets={saveTargets} saveMeal={saveMeal} removeMeal={removeMeal} analyzeDiet={analyzeDiet} />}
+        {view === "gratitude" && <GratitudeView loading={loading} entries={gratitudeEntries} addEntry={addGratitude} editEntry={editGratitude} removeEntry={removeGratitude} />}
         {view === "agent" && <AgentView loading={loading} message={message} setMessage={setMessage} sending={sending} agentError={agentError} latestResponse={latestResponse} actions={actions} deciding={deciding} sendMessage={sendMessage} decide={decide} />}
         {view === "settings" && <SettingsView loading={loading} recurringTasks={recurringTasks} preferences={preferences} setPreferences={setPreferences} onRecurringSaved={onRecurringSaved} toggleRecurringTask={toggleRecurringTask} removeRecurringTask={removeRecurringTask} savePreferences={savePreferences} />}
       </div>
     </SidebarInset>
 
-    <nav aria-label="주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-[#DDE2DD] bg-white/95 px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">{navigation.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined} className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[0.68rem] font-medium ${view === id ? "bg-[#E7F0EB] text-[#183D35]" : "text-[#707A75]"}`}><Icon className="size-5" /><span className="truncate">{label}</span>{id === "agent" && actions.length > 0 && <span className="absolute right-[18%] top-1 size-2 rounded-full bg-[#D17B52]" />}</button>)}</nav>
+    <nav aria-label="주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 border-t border-[#DDE2DD] bg-white/95 px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">{navigation.map(({ id, label, short, icon: Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined} className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[0.68rem] font-medium ${view === id ? "bg-[#E7F0EB] text-[#183D35]" : "text-[#707A75]"}`}><Icon className="size-5" /><span className="truncate">{short ?? label}</span>{id === "agent" && actions.length > 0 && <span className="absolute right-[18%] top-1 size-2 rounded-full bg-[#D17B52]" />}</button>)}</nav>
     <Toaster position="top-center" richColors />
   </SidebarProvider>
 }

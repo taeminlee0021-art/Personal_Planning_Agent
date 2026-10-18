@@ -230,6 +230,16 @@ diet_reviews = Table(
     sqlite_autoincrement=True,
 )
 
+gratitude_entries = Table(
+    "gratitude_entries", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("entry_date", Date, nullable=False, index=True),
+    Column("content", String(2000), nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    sqlite_autoincrement=True,
+)
+
 workout_settings = Table(
     "workout_settings", metadata,
     Column("id", Integer, primary_key=True),

@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, Path, Request, Response, Body
 from app.api.schemas import (
     AgentMessage, AgentResponse, BodySettingsResponse, DietReviewResponse, EmptyDecision, ErrorResponse, FoodNutritionResponse, MealEntryResponse, PlanResponse, PlanStatusUpdate, PreferencesResponse,
     RecurringTaskResponse, ScheduleResponse, ScheduleStatusUpdate, TaskCreate, TaskUpdate, TodayItemResponse,
-    TodayItemsReorder, TodayItemUpdate, WeightRecordResponse, WorkoutSessionResponse, WorkoutSettingsResponse, WorkoutWeekResponse,
+    TodayItemsReorder, TodayItemUpdate, WeightRecordResponse, WorkoutSessionResponse, WorkoutSettingsResponse, WorkoutWeekResponse, GratitudeEntryResponse,
 )
 from app.actions import ActionResponse, ActionService, ApprovalSelection
-from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput
+from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput, GratitudeEntryInput
 from app.models import Task
 from app.planning import Preferences
 from app.storage_service import DatabasePlanningService
@@ -240,6 +240,27 @@ def update_workout_session(identifier: Identifier, value: WorkoutSessionInput, s
 def delete_workout_session(identifier: Identifier, service: Service):
     service.delete_workout_session(identifier)
     return Response(status_code=204)
+
+@router.get("/gratitude", response_model=list[GratitudeEntryResponse], tags=["Gratitude"])
+def gratitude_entries(service: Service):
+    return service.list_gratitude_entries()
+
+
+@router.post("/gratitude", response_model=GratitudeEntryResponse, status_code=201, tags=["Gratitude"])
+def create_gratitude_entry(value: GratitudeEntryInput, service: Service):
+    return service.save_gratitude_entry(value)
+
+
+@router.put("/gratitude/{identifier}", response_model=GratitudeEntryResponse, tags=["Gratitude"])
+def update_gratitude_entry(identifier: Identifier, value: GratitudeEntryInput, service: Service):
+    return service.save_gratitude_entry(value, identifier)
+
+
+@router.delete("/gratitude/{identifier}", status_code=204, tags=["Gratitude"])
+def delete_gratitude_entry(identifier: Identifier, service: Service):
+    service.delete_gratitude_entry(identifier)
+    return Response(status_code=204)
+
 
 @router.get("/preferences", response_model=PreferencesResponse, tags=["Preferences"])
 def preferences(service: Service):

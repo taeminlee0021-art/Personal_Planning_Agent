@@ -1,18 +1,18 @@
 "use client"
 
 import { DragEvent, FormEvent, useState } from "react"
-import { CalendarClock, Check, CheckCircle2, Circle, Clock3, Dumbbell, GripVertical, Plus, Repeat2, Sparkles, Trash2 } from "lucide-react"
-import type { FixedSchedule, Plan, Task, TodayItem, WorkoutSession } from "@/lib/types"
+import { CalendarClock, Check, CheckCircle2, Circle, Clock3, Dumbbell, GripVertical, HeartHandshake, Plus, Repeat2, Sparkles, Trash2 } from "lucide-react"
+import type { FixedSchedule, GratitudeDraft, GratitudeEntry, Plan, Task, TodayItem, WorkoutSession } from "@/lib/types"
 import type { HealthTab } from "@/components/planner/weight-view"
 import { PlanRow, LoadingCards } from "@/components/planner/shared"
-import { duration, formatTime, workoutMinutes, workoutTitle } from "@/components/planner/helpers"
+import { dateKey, duration, formatTime, workoutMinutes, workoutTitle } from "@/components/planner/helpers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 
-export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, workouts, toggleWorkout, openAgent, openHealth, addItem, toggleItem, togglePlan, toggleSchedule, removeItem, reorderItems }: {
+export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, workouts, toggleWorkout, openAgent, openHealth, openGratitude, todayGratitude, addGratitude, addItem, toggleItem, togglePlan, toggleSchedule, removeItem, reorderItems }: {
   loading: boolean
   items: TodayItem[]
   plans: Plan[]
@@ -23,6 +23,9 @@ export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, 
   workouts: WorkoutSession[]
   toggleWorkout: (session: WorkoutSession) => Promise<void>
   openHealth: (tab: HealthTab) => void
+  openGratitude: () => void
+  todayGratitude: GratitudeEntry[]
+  addGratitude: (value: GratitudeDraft) => Promise<void>
   addItem: (title: string) => Promise<void>
   toggleItem: (item: TodayItem) => Promise<void>
   togglePlan: (plan: Plan) => Promise<void>
@@ -33,6 +36,8 @@ export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, 
   const [title, setTitle] = useState("")
   const [adding, setAdding] = useState(false)
   const [draggedId, setDraggedId] = useState<number | null>(null)
+  const [gratitude, setGratitude] = useState("")
+  const [savingGratitude, setSavingGratitude] = useState(false)
   const activeTasks = tasks.filter((task) => task.status !== "COMPLETED")
   const completed = items.filter((item) => item.status === "COMPLETED").length
   const pendingItems = items.filter((item) => item.status !== "COMPLETED")
@@ -51,6 +56,14 @@ export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, 
     }
   }
 
+  async function submitGratitude(event: FormEvent) {
+    event.preventDefault()
+    const value = gratitude.trim()
+    if (!value) return
+    setSavingGratitude(true)
+    try { await addGratitude({ entry_date: dateKey(new Date()), content: value }); setGratitude("") } finally { setSavingGratitude(false) }
+  }
+
   function dropItem(event: DragEvent, targetId: number) {
     event.preventDefault()
     if (draggedId === null || draggedId === targetId) return
@@ -65,10 +78,12 @@ export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, 
   function checklistItem(item: TodayItem, canDrag: boolean) {
     const isHealthPrompt = item.source === "RECURRING" && item.recurrence_id === null && (item.title === "몸무게 기록" || item.title === "주간 식단 평가")
     const isWeightPrompt = isHealthPrompt && item.title === "몸무게 기록"
+    const isGratitudePrompt = item.source === "RECURRING" && item.recurrence_id === null && item.title === "감사일기 쓰기"
+    const openPrompt = isGratitudePrompt ? openGratitude : isWeightPrompt ? () => openHealth("weight") : null
     return <div key={item.id} onDragOver={(event) => canDrag && event.preventDefault()} onDrop={(event) => canDrag && dropItem(event, item.id)} className={`group flex min-h-14 items-center gap-2 border-b border-[#EDF0ED] py-2 transition last:border-b-0 ${draggedId === item.id ? "opacity-45" : ""}`}>
       {canDrag ? <button type="button" draggable onDragStart={(event) => { setDraggedId(item.id); event.dataTransfer.effectAllowed = "move" }} onDragEnd={() => setDraggedId(null)} aria-label={`${item.title} 순서 변경`} title="드래그하여 순서 변경" className="grid size-8 shrink-0 cursor-grab place-items-center rounded-lg text-[#96A09B] hover:bg-[#F0F3F1] hover:text-[#53665E] active:cursor-grabbing"><GripVertical className="size-5" /></button> : <span className="size-8 shrink-0" aria-hidden="true" />}
-      <button type="button" onClick={() => isWeightPrompt ? openHealth("weight") : void toggleItem(item)} aria-label={isWeightPrompt ? "몸무게 입력 탭 열기" : item.status === "COMPLETED" ? `${item.title} 완료 취소` : `${item.title} 완료`} className="grid size-10 shrink-0 place-items-center rounded-xl text-[#356859] hover:bg-[#EDF4F0]">{item.status === "COMPLETED" ? <span className="grid size-6 place-items-center rounded-full bg-[#356859] text-white"><Check className="size-4" /></span> : <Circle className="size-6" />}</button>
-      <div className="min-w-0 flex-1"><p className={`break-words font-medium ${item.status === "COMPLETED" ? "text-[#8A928E] line-through" : "text-[#283B34]"}`}>{isHealthPrompt ? <button type="button" onClick={() => openHealth(isWeightPrompt ? "weight" : "diet")} className="rounded text-left underline decoration-[#9CB7AC] underline-offset-4 hover:text-[#285A4D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5F8C7C]">{item.title}</button> : item.title}</p><div className="mt-1 flex flex-wrap gap-1.5">{item.source === "RECURRING" && <Badge variant="secondary" className="h-5 bg-[#EEF3F0] px-1.5 text-[0.68rem] text-[#53665E]"><Repeat2 className="size-3" />{isHealthPrompt ? "건강 탭 열기" : "반복"}</Badge>}{item.source === "TASK" && <Badge variant="secondary" className="h-5 bg-[#EEF3F0] px-1.5 text-[0.68rem] text-[#53665E]">할 일에서 추가</Badge>}{item.completion_target > 1 && <Badge variant="outline" className="h-5 px-1.5 text-[0.68rem]">{item.completion_count * 500}ml · {item.completion_count}/{item.completion_target}</Badge>}</div></div>
+      <button type="button" onClick={() => openPrompt ? openPrompt() : void toggleItem(item)} aria-label={isGratitudePrompt ? "감사일기 탭 열기" : isWeightPrompt ? "몸무게 입력 탭 열기" : item.status === "COMPLETED" ? `${item.title} 완료 취소` : `${item.title} 완료`} className="grid size-10 shrink-0 place-items-center rounded-xl text-[#356859] hover:bg-[#EDF4F0]">{item.status === "COMPLETED" ? <span className="grid size-6 place-items-center rounded-full bg-[#356859] text-white"><Check className="size-4" /></span> : <Circle className="size-6" />}</button>
+      <div className="min-w-0 flex-1"><p className={`break-words font-medium ${item.status === "COMPLETED" ? "text-[#8A928E] line-through" : "text-[#283B34]"}`}>{isHealthPrompt || isGratitudePrompt ? <button type="button" onClick={() => isGratitudePrompt ? openGratitude() : openHealth(isWeightPrompt ? "weight" : "diet")} className="rounded text-left underline decoration-[#9CB7AC] underline-offset-4 hover:text-[#285A4D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5F8C7C]">{item.title}</button> : item.title}</p><div className="mt-1 flex flex-wrap gap-1.5">{item.source === "RECURRING" && <Badge variant="secondary" className="h-5 bg-[#EEF3F0] px-1.5 text-[0.68rem] text-[#53665E]"><Repeat2 className="size-3" />{isGratitudePrompt ? "감사일기 열기" : isHealthPrompt ? "건강 탭 열기" : "반복"}</Badge>}{item.source === "TASK" && <Badge variant="secondary" className="h-5 bg-[#EEF3F0] px-1.5 text-[0.68rem] text-[#53665E]">할 일에서 추가</Badge>}{item.completion_target > 1 && <Badge variant="outline" className="h-5 px-1.5 text-[0.68rem]">{item.completion_count * 500}ml · {item.completion_count}/{item.completion_target}</Badge>}</div></div>
       {item.source !== "RECURRING" && <Button size="icon" variant="ghost" onClick={() => void removeItem(item.id)} aria-label={`${item.title} 삭제`} className="shrink-0 text-[#9A6554] opacity-70 hover:opacity-100"><Trash2 /></Button>}
     </div>
   }
@@ -76,8 +91,19 @@ export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, 
   return <section aria-labelledby="today-heading">
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.8fr)]">
       <div className="min-w-0">
-        <div className="mb-5"><p className="mb-1 text-sm font-semibold text-[#356859]">TODAY</p><h2 id="today-heading" className="text-2xl font-bold tracking-tight md:text-3xl">오늘 할 일을 바로 적어보세요</h2><p className="mt-2 text-sm text-[#74807A]">입력하고 Enter를 누르면 즉시 등록됩니다.</p></div>
-        <form onSubmit={submit} className="flex gap-2 rounded-2xl border border-[#BFCFC7] bg-white p-2 shadow-[0_8px_24px_rgba(34,64,53,0.08)] focus-within:border-[#5F8C7C] focus-within:ring-4 focus-within:ring-[#DCEAE3]">
+        <div className="mb-5"><p className="mb-1 text-sm font-semibold text-[#356859]">TODAY</p><h2 id="today-heading" className="text-2xl font-bold tracking-tight md:text-3xl">오늘 하루를 한눈에</h2><p className="mt-2 text-sm text-[#74807A]">운동, 감사일기, 체크리스트를 순서대로 확인하세요.</p></div>
+        {!loading && workouts.length > 0 && <section aria-labelledby="workout-heading">
+          <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Dumbbell className="size-5 text-[#356859]" /><h3 id="workout-heading" className="font-bold text-[#263A33]">오늘의 운동</h3></div><Button variant="ghost" size="sm" onClick={() => openHealth("workout")} className="text-[#285A4D]">운동 관리</Button></div>
+          <div className="grid gap-3">{workouts.map((session) => <article key={session.id} className={`flex items-start gap-3 rounded-2xl border p-4 ${session.completed ? "border-[#D8DEDA] bg-[#F7F8F6]" : "border-[#BFD5CA] bg-[#F3F8F5]"}`}><Checkbox checked={session.completed} onCheckedChange={() => void toggleWorkout(session)} aria-label={session.completed ? "운동 완료 취소" : "운동 완료"} className="mt-0.5 size-5 rounded-full border-[#6F9586] data-[state=checked]:bg-[#356859]" /><div className="min-w-0 flex-1"><h3 className={`text-base font-semibold sm:text-lg ${session.completed ? "text-[#89928E] line-through" : "text-[#20332C]"}`}>{workoutTitle(session)}</h3><p className="mt-0.5 text-sm text-[#66766F]">{workoutMinutes(session)}</p>{session.note && <p className="mt-2 text-sm leading-6 text-[#4A5F57]">{session.note}</p>}{!session.muscle_groups.length && <button type="button" onClick={() => openHealth("workout")} className="mt-2 text-sm font-medium text-[#285A4D] underline underline-offset-4">부위 정하기</button>}</div></article>)}</div>
+        </section>}
+
+        <section className="mt-6 rounded-[1.35rem] border border-[#CFE0D7] bg-[#F3F8F5] p-4 sm:p-5" aria-labelledby="gratitude-today-heading">
+          <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><HeartHandshake className="size-5 text-[#356859]" /><h3 id="gratitude-today-heading" className="font-bold text-[#263A33]">감사일기</h3></div><Button variant="ghost" size="sm" onClick={openGratitude} className="text-[#285A4D]">전체 보기</Button></div>
+          {todayGratitude.length > 0 && <ul className="mb-3 space-y-1.5">{todayGratitude.map((entry) => <li key={entry.id} className="flex gap-2 rounded-xl bg-white px-3 py-2 text-sm leading-6 text-[#2B3F37]"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-[#356859]" /><span className="min-w-0 whitespace-pre-wrap break-words">{entry.content}</span></li>)}</ul>}
+          <form onSubmit={submitGratitude} className="flex gap-2"><Input aria-label="오늘 감사한 일" autoComplete="off" maxLength={2000} placeholder={todayGratitude.length ? "하나 더 적어볼까요?" : "오늘 감사한 일을 한 줄 적어보세요"} value={gratitude} onChange={(event) => setGratitude(event.target.value)} className="h-11 bg-white text-base" /><Button type="submit" disabled={savingGratitude || !gratitude.trim()} className="h-11 shrink-0 rounded-xl bg-[#183D35] px-4">{savingGratitude ? "저장 중" : "저장"}</Button></form>
+        </section>
+
+        <form onSubmit={submit} className="mt-6 flex gap-2 rounded-2xl border border-[#BFCFC7] bg-white p-2 shadow-[0_8px_24px_rgba(34,64,53,0.08)] focus-within:border-[#5F8C7C] focus-within:ring-4 focus-within:ring-[#DCEAE3]">
           <div className="grid size-11 shrink-0 place-items-center text-[#356859]"><Plus className="size-5" /></div>
           <Input aria-label="오늘 할 일" autoComplete="off" maxLength={120} placeholder="예: 저녁에 우유 사기" value={title} onChange={(event) => setTitle(event.target.value)} className="h-11 border-0 px-0 text-base shadow-none focus-visible:ring-0" />
           <Button type="submit" disabled={adding || !title.trim()} className="h-11 shrink-0 rounded-xl bg-[#183D35] px-4">{adding ? "추가 중" : "추가"}</Button>
@@ -89,11 +115,6 @@ export function TodayView({ loading, items, plans, schedules, weekPlans, tasks, 
         </section>
 
         {!loading && completedItems.length > 0 && <section className="mt-4 rounded-[1.35rem] border border-[#D8DEDA] bg-[#F1F4F2] p-4 sm:p-5" aria-labelledby="completed-checklist-heading"><div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><CheckCircle2 className="size-5 text-[#66776F]" /><h3 id="completed-checklist-heading" className="font-bold text-[#4E5E57]">완료된 항목</h3></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#718078]">{completedItems.length}개</span></div><div className="divide-y divide-[#DDE3DF]">{completedItems.map((item) => checklistItem(item, false))}</div></section>}
-
-        {!loading && workouts.length > 0 && <section className="mt-6" aria-labelledby="workout-heading">
-          <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Dumbbell className="size-5 text-[#356859]" /><h3 id="workout-heading" className="font-bold text-[#263A33]">오늘의 운동</h3></div><Button variant="ghost" size="sm" onClick={() => openHealth("workout")} className="text-[#285A4D]">운동 관리</Button></div>
-          <div className="grid gap-3">{workouts.map((session) => <article key={session.id} className={`flex items-start gap-3 rounded-2xl border p-4 ${session.completed ? "border-[#D8DEDA] bg-[#F7F8F6]" : "border-[#BFD5CA] bg-[#F3F8F5]"}`}><Checkbox checked={session.completed} onCheckedChange={() => void toggleWorkout(session)} aria-label={session.completed ? "운동 완료 취소" : "운동 완료"} className="mt-0.5 size-5 rounded-full border-[#6F9586] data-[state=checked]:bg-[#356859]" /><div className="min-w-0 flex-1"><h3 className={`text-base font-semibold sm:text-lg ${session.completed ? "text-[#89928E] line-through" : "text-[#20332C]"}`}>{workoutTitle(session)}</h3><p className="mt-0.5 text-sm text-[#66766F]">{workoutMinutes(session)}</p>{session.note && <p className="mt-2 text-sm leading-6 text-[#4A5F57]">{session.note}</p>}{!session.muscle_groups.length && <button type="button" onClick={() => openHealth("workout")} className="mt-2 text-sm font-medium text-[#285A4D] underline underline-offset-4">부위 정하기</button>}</div></article>)}</div>
-        </section>}
 
         <section className="mt-6" aria-labelledby="scheduled-heading">
           <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><Clock3 className="size-5 text-[#356859]" /><h3 id="scheduled-heading" className="font-bold text-[#263A33]">시간이 정해진 계획</h3></div><Button variant="ghost" size="sm" onClick={openAgent} className="text-[#285A4D]"><Sparkles />AI로 계획</Button></div>

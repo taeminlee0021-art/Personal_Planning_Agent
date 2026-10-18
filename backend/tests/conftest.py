@@ -7,3 +7,5 @@ def isolate_deployment_environment(monkeypatch):
     monkeypatch.setenv("APP_INTERNAL_TOKEN", "")
     monkeypatch.setenv("DATABASE_URL", "")
     monkeypatch.setenv("PLANNING_DATABASE_PATH", "")
+    # Keep Today-list expectations in older tests stable; test_gratitude re-enables it.
+    monkeypatch.setattr("app.storage_service.DAILY_GRATITUDE_PROMPT", False)

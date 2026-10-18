@@ -61,6 +61,11 @@ class TodayItemInput(Model):
     title: str = Field(min_length=1, max_length=120)
 
 
+class GratitudeEntryInput(Model):
+    entry_date: date | None = None
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class BodySettingsInput(Model):
     height_cm: float = Field(gt=50, le=250, allow_inf_nan=False)
     daily_protein_target_g: float = Field(default=160, ge=0, le=500, allow_inf_nan=False)

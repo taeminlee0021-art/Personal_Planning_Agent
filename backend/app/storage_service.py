@@ -4,12 +4,17 @@ from datetime import date, datetime, time, timedelta
 
 from app import database as db
 from app.errors import ConflictError
-from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput
+from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput, GratitudeEntryInput
 from app.diet import DietAnalysis
 from app.workout import MUSCLE_GROUP_LABELS, WorkoutPlan
 from app.models import Proposal, Task
 from app.planning import KST, PlanBlock, Preferences, TimeRange, aware, daily_minutes, validate_plan
 from app.services import PlanningSnapshot
+
+
+GRATITUDE_PROMPT = "감사일기 쓰기"
+# Tests for unrelated Today behavior switch the daily nudge off (see conftest).
+DAILY_GRATITUDE_PROMPT = True
 
 
 def json_row(row):
@@ -212,13 +217,17 @@ class DatabasePlanningService:
                     "updated_at": now,
                 })
                 next_order += 1
+        # Protected prompts (no rule row): a daily gratitude nudge plus Sunday reviews.
+        prompt_specs = ([(GRATITUDE_PROMPT, self._has_gratitude_entry(repository, item_date))]
+                        if DAILY_GRATITUDE_PROMPT else [])
         if item_date.weekday() == 6:
-            prompt_specs = (
+            prompt_specs += [
                 ("주간 식단 평가", bool(repository.list(
                     db.diet_reviews, db.diet_reviews.c.week_start == item_date - timedelta(days=6)))),
                 ("몸무게 기록", bool(repository.list(
                     db.weight_records, db.weight_records.c.measured_on == item_date))),
-            )
+            ]
+        if prompt_specs:
             for title, completed in prompt_specs:
                 prompts = repository.list(
                     db.today_items,
@@ -835,6 +844,56 @@ class DatabasePlanningService:
                 })
             repository.update(db.workout_weeks, week["id"], {"summary": plan.summary, "planned_at": now})
             return self._workout_week_json(repository, week_start)
+
+    @staticmethod
+    def _has_gratitude_entry(repository, day):
+        return bool(repository.list(db.gratitude_entries, db.gratitude_entries.c.entry_date == day))
+
+    def _sync_gratitude_prompt(self, repository, day):
+        """The daily prompt mirrors whether any entry exists for that date."""
+        completed = self._has_gratitude_entry(repository, day)
+        for prompt in repository.list(
+                db.today_items,
+                db.today_items.c.item_date == day,
+                db.today_items.c.source == "RECURRING",
+                db.today_items.c.recurrence_id.is_(None),
+                db.today_items.c.title == GRATITUDE_PROMPT):
+            if (prompt["status"] == "COMPLETED") != completed:
+                repository.update(db.today_items, prompt["id"], {
+                    "status": "COMPLETED" if completed else "TODO",
+                    "completion_count": 1 if completed else 0,
+                    "updated_at": self.current_time(),
+                })
+
+    def list_gratitude_entries(self):
+        with self.database.transaction() as repository:
+            rows = repository.list(db.gratitude_entries)
+            return [json_row(row) for row in sorted(
+                rows, key=lambda item: (item["entry_date"], item["id"]), reverse=True)]
+
+    def save_gratitude_entry(self, value: GratitudeEntryInput, identifier=None):
+        value = GratitudeEntryInput.model_validate(value.model_dump())
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            existing = repository.get(db.gratitude_entries, identifier) if identifier is not None else None
+            values = {
+                "entry_date": value.entry_date or (existing["entry_date"] if existing else now.date()),
+                "content": value.content,
+                "created_at": existing["created_at"] if existing else now,
+                "updated_at": now,
+            }
+            row = (repository.update(db.gratitude_entries, identifier, values) if existing
+                   else repository.insert(db.gratitude_entries, values))
+            if existing and existing["entry_date"] != values["entry_date"]:
+                self._sync_gratitude_prompt(repository, existing["entry_date"])
+            self._sync_gratitude_prompt(repository, values["entry_date"])
+            return json_row(row)
+
+    def delete_gratitude_entry(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            row = repository.get(db.gratitude_entries, identifier)
+            repository.delete(db.gratitude_entries, identifier)
+            self._sync_gratitude_prompt(repository, row["entry_date"])
 
     def get_preferences(self):
         with self.database.transaction() as repository:

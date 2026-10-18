@@ -1,6 +1,6 @@
 import type { MuscleGroup, Preferences, Priority, ScheduleDraft, TaskDraft, WorkoutSession } from "@/lib/types"
 
-export type View = "today" | "tasks" | "week" | "weight" | "agent" | "settings"
+export type View = "today" | "tasks" | "week" | "weight" | "gratitude" | "agent" | "settings"
 
 export const emptyTask: TaskDraft = {
   title: "", description: "", estimated_minutes: 60, priority: "MEDIUM",

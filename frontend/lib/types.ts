@@ -240,6 +240,16 @@ export interface WorkoutSession {
 
 export type WorkoutSessionDraft = Pick<WorkoutSession, "session_date" | "muscle_groups" | "note" | "completed">
 
+export interface GratitudeEntry {
+  id: number
+  entry_date: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export type GratitudeDraft = Pick<GratitudeEntry, "entry_date" | "content">
+
 export interface WorkoutWeek {
   week_start: string
   summary: string | null
