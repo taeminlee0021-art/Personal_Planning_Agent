@@ -174,3 +174,22 @@ def test_existing_body_settings_gain_protein_target_and_payload_includes_it(tmp_
         }]
     finally:
         database.close()
+
+
+def test_strict_schema_has_no_default_keyword_and_requires_every_field():
+    from app.diet import strict_schema
+
+    def walk(node, found):
+        if isinstance(node, dict):
+            found |= {key for key in node if key == "default"}
+            for value in node.values():
+                walk(value, found)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value, found)
+        return found
+
+    schema = strict_schema(DietAnalysis)
+    assert walk(schema, set()) == set()
+    assert set(schema["required"]) == set(schema["properties"])
+    assert "biggest_issue" in schema["required"]

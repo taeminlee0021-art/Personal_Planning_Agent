@@ -59,16 +59,34 @@ diagnose or prescribe. Mark estimated values as estimates. Return only the stric
 """
 
 
-def analyze_diet(client, model, payload):
-    schema = DietAnalysis.model_json_schema()
+def strict_schema(model_class):
+    """OpenAI strict mode requires every property and rejects `default` keywords."""
+    def strip_defaults(node):
+        if isinstance(node, dict):
+            node.pop("default", None)
+            for value in node.values():
+                strip_defaults(value)
+        elif isinstance(node, list):
+            for value in node:
+                strip_defaults(value)
+        return node
+
+    schema = strip_defaults(model_class.model_json_schema())
     schema["required"] = list(schema["properties"])
+    return schema
+
+
+def analyze_diet(client, model, payload):
+    schema = strict_schema(DietAnalysis)
     response = client.responses.create(
         model=model,
         instructions=INSTRUCTIONS,
         input=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
         text={"format": {"type": "json_schema", "name": "weekly_diet_review",
                          "schema": schema, "strict": True}},
-        reasoning={"effort": "medium"}, max_output_tokens=4000, store=False,
+        # A full week (~30 meals) produced ~4.2k output tokens at medium effort and
+        # took ~43 s; low effort stays concrete at ~28 s and well inside proxy limits.
+        reasoning={"effort": "low"}, max_output_tokens=8000, store=False,
     )
     if response.status != "completed":
         raise ValueError("Diet analysis did not complete")
