@@ -1864,3 +1864,38 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - Deployment: GitHub main `7b8989e`; Render `personal-planning-agent-api-64ij`
   manual deploy succeeded and is Live with `/health` 200. A real production
   review run by the owner is still pending confirmation.
+
+## 2026-10-18 - Gratitude journal
+
+- The user asked for a gratitude journal with a list view, developed locally
+  first, then refined (no badge, Today ordering) and deployed.
+- Added `gratitude_entries` (entry_date, content up to 2000 chars, timestamps)
+  with list/create/update/delete APIs under `/api/gratitude`; entries default
+  to the current Asia/Seoul date and list newest first. New table only.
+- New 감사일기 view: write form (date capped at today) and a paged list, 10 per
+  page, rendered as date | content rows with inline edit and guarded delete.
+  Desktop adds a 관리 column; mobile stacks the actions under the row.
+- Today now orders 오늘의 운동 -> 감사일기 -> quick entry -> 오늘 체크리스트 ->
+  timed plans. The Today 감사일기 card lists today's entries, saves a one-line
+  entry on Enter and links to the full view. A protected daily "감사일기 쓰기"
+  checklist prompt (no rule row) is materialized each day and mirrors whether
+  an entry exists for that date, including edits that move the date and
+  deletes. Its circle and title open the journal rather than toggling.
+- The sidebar weekly completion count now ignores protected prompts
+  (recurrence_id null) because they never contributed to the target.
+- Removed the stale `nav[aria-label="주요 메뉴"] { grid-template-columns:
+  repeat(5, ...) !important }` rule from globals.css; it had been forcing the
+  6th item onto a second row and would have done the same to the 7th. Mobile
+  labels shorten to 주간 / 감사 so seven items fit at 375px.
+- Tests: a module flag `DAILY_GRATITUDE_PROMPT` lets conftest disable the
+  daily prompt for the many Today-list tests that assert exact contents; the
+  gratitude tests re-enable it. 223 backend tests passed; tsc, ESLint and the
+  Vinext build passed. Local browser smoke covered save/list/paging, the Today
+  quick entry, prompt completion and the 375px layout; all local test entries
+  were deleted afterwards. The Next dev server needed a restart to pick up
+  the globals.css change (stale CSS chunk); production builds are unaffected.
+- Deployment: GitHub main `5efdd99`; Render `personal-planning-agent-api-64ij`
+  manual deploy succeeded and is Live (production `/api/gratitude` returns []
+  and today's prompt row exists); Worker redeployed as `390dd445` with the
+  secret retained and unauthenticated requests still 302 to Access. The
+  ChatGPT Sites frontend still needs the owner's Codex publish from main.
