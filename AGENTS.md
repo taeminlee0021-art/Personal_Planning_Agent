@@ -1844,3 +1844,23 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   default; the existing week-of-10-05 review row survived the column add);
   Worker redeployed as `93f4d28c` with the secret retained. Sites still needs
   the owner's Codex publish.
+
+## 2026-10-18 - Diet review output-budget fix
+
+- The user reported that the weekly diet review failed in production after the
+  coaching rewrite. Render logs were unavailable (session expired), so the
+  failure was reproduced locally against the real API with synthetic data.
+- A realistic week (27 meals, 7 unresolved) at medium reasoning produced 4,184
+  output tokens and took 43 s, exceeding the 4,000-token ceiling; the Responses
+  call then returned incomplete, raised ValueError and surfaced as a 502
+  "internal validation" error. The strict schema's `default` keyword was
+  checked as a suspect and found to be accepted by the API.
+- Fix: low reasoning with an 8,000-token ceiling (same week completed in 28 s
+  with equally concrete issue/action output), plus `strict_schema()` that
+  strips `default` keywords and requires every property. Model stays
+  gpt-5-mini. Three paid verification calls were made with synthetic data only.
+- Verification: 220 backend tests passed (1 new schema test). No frontend
+  change, so the Cloudflare Worker was not redeployed.
+- Deployment: GitHub main `7b8989e`; Render `personal-planning-agent-api-64ij`
+  manual deploy succeeded and is Live with `/health` 200. A real production
+  review run by the owner is still pending confirmation.
