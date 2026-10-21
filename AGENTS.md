@@ -1899,3 +1899,37 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   and today's prompt row exists); Worker redeployed as `390dd445` with the
   secret retained and unauthenticated requests still 302 to Access. The
   ChatGPT Sites frontend still needs the owner's Codex publish from main.
+
+## 2026-10-21 - Pastel "diary" restyle, polaroid photos and D-day card
+
+- The user supplied reference screenshots of a pink/navy pastel diary UI and
+  asked to restyle without changing behavior, then approved two additions
+  (photo polaroid, D-day card) and declined a habit heatmap, theme picker,
+  dark mode and mascot/character gallery. Local only; no commit or deploy yet.
+- Restyle: every hard-coded green hex in `frontend/components/planner/*` was
+  remapped to a pink/lavender/navy palette; `globals.css` tokens, radius and
+  fonts changed (Jua display headings, Noto Sans KR body, loaded through a
+  Google Fonts `@import`). `planner-app.tsx` replaced the shadcn sidebar with
+  a top app bar, rainbow rule, one white main card (spiral-ring decoration,
+  "view name + date" header) and a right-hand pink navigation card with the
+  weekly completion card beneath. Buttons are pills, checkboxes are navy
+  squares, inputs white. Per-view headings became subtitles; Settings uses
+  dashed setting rows and habit-style recurring cards; Week/Health use pastel
+  stat tiles. Mobile keeps the seven-item bottom navigation.
+- Photos: new `photos` table (caption, order_index, inline data-URL
+  `image_data`, timestamps) and `/api/photos` list/create/reorder/caption/
+  delete. Input accepts only base64 jpeg/png/webp data URLs up to 600,000
+  chars; the service caps storage at 10 photos and validates reorders.
+  Images are stored in the database because the free Render service has no
+  persistent disk. The browser downsizes uploads to a 900 px JPEG before
+  sending. Settings has a "내 사진" grid (upload, caption, reorder, delete);
+  the right rail shows a polaroid that rotates every 8 s with dots.
+- D-day card: right rail list of up to five upcoming items derived from
+  existing data only (unfinished tasks with due dates, future fixed
+  schedules). Both rail cards are desktop-only because the rail is hidden
+  below the md breakpoint.
+- Verification: 225 backend tests passed (2 new in test_photos.py); frontend
+  tsc and ESLint passed. Local browser smoke covered the restyled Today,
+  Tasks, Week, Health and Settings views at 1400 px and 375 px, plus photo
+  upload via the API, caption edit, reorder and delete through the UI; the
+  temporary photos and task were deleted afterwards.

@@ -35,7 +35,7 @@ export function ScheduleDialog({ schedule, trigger, onSaved }: { schedule?: Fixe
         <label className="grid gap-1.5 text-sm font-medium">제목<Input required maxLength={120} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
         <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium">시작<Input required type="datetime-local" value={draft.start_datetime} onChange={(e) => setDraft({ ...draft, start_datetime: e.target.value })} /></label><label className="grid gap-1.5 text-sm font-medium">종료<Input required type="datetime-local" value={draft.end_datetime} onChange={(e) => setDraft({ ...draft, end_datetime: e.target.value })} /></label></div>
         <label className="grid gap-1.5 text-sm font-medium">설명<Textarea value={draft.description} maxLength={2000} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
-        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={saving} type="submit" className="bg-[#183D35] hover:bg-[#28564A]">{saving && <Loader2 className="animate-spin" />}저장</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={saving} type="submit" className="bg-[#2B3561] hover:bg-[#3A4578]">{saving && <Loader2 className="animate-spin" />}저장</Button></DialogFooter>
       </form>
     </DialogContent>
   </Dialog>

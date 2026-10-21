@@ -61,18 +61,18 @@ export function RecurringDialog({ item, trigger, onSaved }: { item?: RecurringTa
         <fieldset className="grid gap-2">
           <legend className="mb-2 text-sm font-medium">반복 주기</legend>
           <div className="grid grid-cols-3 gap-2">
-            <Button type="button" variant={draft.cadence === "DAILY" ? "default" : "outline"} className={draft.cadence === "DAILY" ? "bg-[#183D35]" : ""} onClick={() => setDraft({ ...draft, cadence: "DAILY", weekdays: [] })}>매일</Button>
-            <Button type="button" variant={draft.cadence === "WEEKLY" ? "default" : "outline"} className={draft.cadence === "WEEKLY" ? "bg-[#183D35]" : ""} onClick={() => setDraft({ ...draft, cadence: "WEEKLY" })}>매주</Button>
-            <Button type="button" variant={draft.cadence === "MONTHLY" ? "default" : "outline"} className={draft.cadence === "MONTHLY" ? "bg-[#183D35]" : ""} onClick={() => setDraft({ ...draft, cadence: "MONTHLY", weekdays: [] })}>매월</Button>
+            <Button type="button" variant={draft.cadence === "DAILY" ? "default" : "outline"} className={draft.cadence === "DAILY" ? "bg-[#2B3561]" : ""} onClick={() => setDraft({ ...draft, cadence: "DAILY", weekdays: [] })}>매일</Button>
+            <Button type="button" variant={draft.cadence === "WEEKLY" ? "default" : "outline"} className={draft.cadence === "WEEKLY" ? "bg-[#2B3561]" : ""} onClick={() => setDraft({ ...draft, cadence: "WEEKLY" })}>매주</Button>
+            <Button type="button" variant={draft.cadence === "MONTHLY" ? "default" : "outline"} className={draft.cadence === "MONTHLY" ? "bg-[#2B3561]" : ""} onClick={() => setDraft({ ...draft, cadence: "MONTHLY", weekdays: [] })}>매월</Button>
           </div>
         </fieldset>
-        {draft.cadence === "MONTHLY" && <p className="text-sm text-[#64736C]">시작일의 날짜에 매월 반복됩니다. 29~31일이 없는 달에는 그 달의 마지막 날에 등록됩니다.</p>}
+        {draft.cadence === "MONTHLY" && <p className="text-sm text-[#5A6185]">시작일의 날짜에 매월 반복됩니다. 29~31일이 없는 달에는 그 달의 마지막 날에 등록됩니다.</p>}
         {draft.cadence === "WEEKLY" && <fieldset>
           <legend className="mb-2 text-sm font-medium">요일 선택</legend>
-          <div className="grid grid-cols-7 gap-1.5">{weekdayLabels.map((label, day) => <button key={label} type="button" aria-pressed={draft.weekdays.includes(day)} onClick={() => toggleWeekday(day)} className={`aspect-square min-h-10 rounded-xl border text-sm font-semibold transition ${draft.weekdays.includes(day) ? "border-[#356859] bg-[#DDE9E3] text-[#183D35]" : "bg-white text-[#707A75] hover:bg-[#F3F5F1]"}`}>{label}</button>)}</div>
+          <div className="grid grid-cols-7 gap-1.5">{weekdayLabels.map((label, day) => <button key={label} type="button" aria-pressed={draft.weekdays.includes(day)} onClick={() => toggleWeekday(day)} className={`aspect-square min-h-10 rounded-xl border text-sm font-semibold transition ${draft.weekdays.includes(day) ? "border-[#E85D8E] bg-[#FCE4EE] text-[#2B3561]" : "bg-white text-[#8A8FA8] hover:bg-[#F3EFF7]"}`}>{label}</button>)}</div>
         </fieldset>}
-        <label className="flex items-center justify-between rounded-xl border bg-[#F8F9F6] px-4 py-3 text-sm font-medium"><span>반복 사용</span><Switch checked={draft.active} onCheckedChange={(active) => setDraft({ ...draft, active })} /></label>
-        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={saving} type="submit" className="bg-[#183D35] hover:bg-[#28564A]">{saving && <Loader2 className="animate-spin" />}저장</Button></DialogFooter>
+        <label className="flex items-center justify-between rounded-xl border bg-[#FBF9FC] px-4 py-3 text-sm font-medium"><span>반복 사용</span><Switch checked={draft.active} onCheckedChange={(active) => setDraft({ ...draft, active })} /></label>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={saving} type="submit" className="bg-[#2B3561] hover:bg-[#3A4578]">{saving && <Loader2 className="animate-spin" />}저장</Button></DialogFooter>
       </form>
     </DialogContent>
   </Dialog>

@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
@@ -7,38 +8,43 @@
 @utility scrollbar-gutter-stable { scrollbar-gutter: stable; }
 
 :root {
-  --background: #f8f9f6;
-  --foreground: #1d2e29;
+  --background: #fbf6f9;
+  --foreground: #2f3660;
   --card: #ffffff;
-  --card-foreground: #1d2e29;
+  --card-foreground: #2f3660;
   --popover: #ffffff;
-  --popover-foreground: #1d2e29;
-  --primary: #183d35;
+  --popover-foreground: #2f3660;
+  --primary: #2b3561;
   --primary-foreground: #ffffff;
-  --secondary: #e7efea;
-  --secondary-foreground: #183d35;
-  --muted: #edf0ec;
-  --muted-foreground: #707a75;
-  --accent: #dde9e3;
-  --accent-foreground: #183d35;
-  --destructive: #b4453e;
-  --border: #dce2dd;
-  --input: #d3dbd5;
-  --ring: #356859;
-  --chart-1: #356859;
-  --chart-2: #476d9b;
-  --chart-3: #d17b52;
-  --chart-4: #d2a84f;
-  --chart-5: #7c5b8e;
-  --radius: 0.85rem;
-  --sidebar: #f3f5f1;
-  --sidebar-foreground: #273b34;
-  --sidebar-primary: #183d35;
+  --secondary: #fce4ee;
+  --secondary-foreground: #2b3561;
+  --muted: #f3eff7;
+  --muted-foreground: #8a8fa8;
+  --accent: #fce4ee;
+  --accent-foreground: #2b3561;
+  --destructive: #d9456b;
+  --border: #efe2ea;
+  --input: #e8dde6;
+  --ring: #f4a3c0;
+  --chart-1: #e85d8e;
+  --chart-2: #7a6bc9;
+  --chart-3: #e9a23b;
+  --chart-4: #f2c94c;
+  --chart-5: #a481d8;
+  --radius: 1.1rem;
+  --sidebar: #ffe6f0;
+  --sidebar-foreground: #2f3660;
+  --sidebar-primary: #2b3561;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #dde9e3;
-  --sidebar-accent-foreground: #183d35;
-  --sidebar-border: #d9ded8;
-  --sidebar-ring: #356859;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #2b3561;
+  --sidebar-border: #f6d6e3;
+  --sidebar-ring: #f4a3c0;
+  --pink: #e85d8e;
+  --pink-soft: #fce4ee;
+  --lavender: #e8e3fb;
+  --lemon: #fff3b0;
+  --sky: #dcebff;
 }
 
 @theme inline {
@@ -56,15 +62,33 @@
   --color-sidebar-primary: var(--sidebar-primary); --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent); --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border); --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-pink: var(--pink); --color-pink-soft: var(--pink-soft); --color-lavender: var(--lavender); --color-lemon: var(--lemon); --color-sky: var(--sky);
+  --radius-sm: calc(var(--radius) - 6px); --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 6px);
+  --font-sans: "Noto Sans KR", "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Jua", "Noto Sans KR", "Pretendard Variable", Pretendard, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 * { border-color: var(--border); }
 html { background: var(--background); }
-body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); min-width: 320px; }
+body {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-width: 320px;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(60rem 30rem at -10% -10%, #ffe3ee 0%, transparent 60%),
+    radial-gradient(50rem 28rem at 110% 0%, #e9e3ff 0%, transparent 60%),
+    radial-gradient(40rem 24rem at 50% 110%, #fff5d6 0%, transparent 60%);
+  background-attachment: fixed;
+}
 button, input, textarea, select { font: inherit; }
 button { touch-action: manipulation; }
-::selection { background: #c6dbd0; color: #183d35; }
+::selection { background: #fcd3e3; color: #2b3561; }
+
+/* Display headings use the rounded Jua face; the gradient bar mirrors the header rule. */
+h1, h2, .font-display { font-family: var(--font-display); font-weight: 400; letter-spacing: 0; }
+.rainbow-bar { background: linear-gradient(90deg, #ffc1d8 0%, #ffe3a8 25%, #d6f2d0 50%, #cfe3ff 75%, #e4d6ff 100%); }
+.card-soft { box-shadow: 0 10px 32px rgba(190, 120, 160, 0.10); }

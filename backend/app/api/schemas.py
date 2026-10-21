@@ -173,6 +173,15 @@ class GratitudeEntryResponse(GratitudeEntryInput):
     updated_at: AwareDatetime
 
 
+class PhotoResponse(Model):
+    id: int
+    caption: str
+    order_index: int
+    image_data: str
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
 class WorkoutSettingsResponse(WorkoutSettingsInput):
     pass
 

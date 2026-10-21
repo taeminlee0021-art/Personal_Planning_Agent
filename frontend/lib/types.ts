@@ -250,6 +250,17 @@ export interface GratitudeEntry {
 
 export type GratitudeDraft = Pick<GratitudeEntry, "entry_date" | "content">
 
+export interface Photo {
+  id: number
+  caption: string
+  order_index: number
+  image_data: string
+  created_at: string
+  updated_at: string
+}
+
+export type PhotoDraft = Pick<Photo, "caption" | "image_data">
+
 export interface WorkoutWeek {
   week_start: string
   summary: string | null

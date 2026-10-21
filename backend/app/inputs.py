@@ -1,4 +1,5 @@
 """Validated structured input for direct user writes, not Agent actions."""
+import re
 from datetime import date, datetime
 from typing import Literal
 
@@ -64,6 +65,37 @@ class TodayItemInput(Model):
 class GratitudeEntryInput(Model):
     entry_date: date | None = None
     content: str = Field(min_length=1, max_length=2000)
+
+
+PHOTO_DATA_URL = re.compile(r"^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$")
+MAX_PHOTO_DATA_LENGTH = 600_000  # ~440 KB of image bytes after browser resizing
+
+
+class PhotoInput(Model):
+    caption: str = Field(default="", max_length=120)
+    image_data: str = Field(min_length=30, max_length=MAX_PHOTO_DATA_LENGTH)
+
+    @field_validator("image_data")
+    @classmethod
+    def valid_image(cls, value):
+        if not PHOTO_DATA_URL.match(value):
+            raise ValueError("Image must be a base64 data URL of type jpeg, png or webp")
+        return value
+
+
+class PhotoCaptionInput(Model):
+    caption: str = Field(default="", max_length=120)
+
+
+class PhotosReorderInput(Model):
+    ordered_ids: list[int] = Field(min_length=1, max_length=10)
+
+    @field_validator("ordered_ids")
+    @classmethod
+    def unique_ids(cls, value):
+        if len(value) != len(set(value)) or any(item <= 0 for item in value):
+            raise ValueError("Photo ids must be unique positive integers")
+        return value
 
 
 class BodySettingsInput(Model):

@@ -19,7 +19,7 @@ export const defaultPreferences: Preferences = {
 
 export const priorityLabel: Record<Priority, string> = { LOW: "낮음", MEDIUM: "보통", HIGH: "높음" }
 export const priorityStyle: Record<Priority, string> = {
-  LOW: "bg-[#EEF2EF] text-[#64716B]", MEDIUM: "bg-[#E7EEF5] text-[#476D9B]", HIGH: "bg-[#F7E9E2] text-[#A1583B]",
+  LOW: "bg-[#E8E3FB] text-[#6F62B5]", MEDIUM: "bg-[#FFE4EE] text-[#C06A84]", HIGH: "bg-[#FFD0E1] text-[#D9456B]",
 }
 
 export function dateKey(value: string | Date) {

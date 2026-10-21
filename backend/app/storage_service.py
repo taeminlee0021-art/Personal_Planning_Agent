@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 
 from app import database as db
 from app.errors import ConflictError
-from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput, GratitudeEntryInput
+from app.inputs import BodySettingsInput, ManualPlanInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput, GratitudeEntryInput, PhotoInput, PhotoCaptionInput
 from app.diet import DietAnalysis
 from app.workout import MUSCLE_GROUP_LABELS, WorkoutPlan
 from app.models import Proposal, Task
@@ -894,6 +894,50 @@ class DatabasePlanningService:
             row = repository.get(db.gratitude_entries, identifier)
             repository.delete(db.gratitude_entries, identifier)
             self._sync_gratitude_prompt(repository, row["entry_date"])
+
+    MAX_PHOTOS = 10
+
+    @staticmethod
+    def _sorted_photos(rows):
+        return [json_row(row) for row in sorted(rows, key=lambda item: (item["order_index"], item["id"]))]
+
+    def list_photos(self):
+        with self.database.transaction() as repository:
+            return self._sorted_photos(repository.list(db.photos))
+
+    def add_photo(self, value: PhotoInput):
+        value = PhotoInput.model_validate(value.model_dump())
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            rows = repository.list(db.photos)
+            if len(rows) >= self.MAX_PHOTOS:
+                raise ConflictError(f"사진은 최대 {self.MAX_PHOTOS}장까지 저장할 수 있습니다.")
+            order_index = max((row["order_index"] for row in rows), default=-1) + 1
+            row = repository.insert(db.photos, {
+                "caption": value.caption, "order_index": order_index, "image_data": value.image_data,
+                "created_at": now, "updated_at": now,
+            })
+            return json_row(row)
+
+    def update_photo_caption(self, identifier, value: PhotoCaptionInput):
+        value = PhotoCaptionInput.model_validate(value.model_dump())
+        with self.database.transaction(write=True) as repository:
+            row = repository.update(db.photos, identifier, {"caption": value.caption, "updated_at": self.current_time()})
+            return json_row(row)
+
+    def reorder_photos(self, ordered_ids):
+        now = self.current_time()
+        with self.database.transaction(write=True) as repository:
+            rows = repository.list(db.photos)
+            if sorted(ordered_ids) != sorted(row["id"] for row in rows):
+                raise ConflictError("Photo order must list every saved photo exactly once")
+            for index, identifier in enumerate(ordered_ids):
+                repository.update(db.photos, identifier, {"order_index": index, "updated_at": now})
+            return self._sorted_photos(repository.list(db.photos))
+
+    def delete_photo(self, identifier):
+        with self.database.transaction(write=True) as repository:
+            repository.delete(db.photos, identifier)
 
     def get_preferences(self):
         with self.database.transaction() as repository:

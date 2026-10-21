@@ -57,7 +57,7 @@ export function TaskDialog({ task, trigger, onSaved }: { task?: Task; trigger: R
           <label className="grid gap-1.5 text-sm font-medium">마감일<Input type="date" value={draft.due_date || ""} onChange={(e) => setDraft({ ...draft, due_date: e.target.value || null })} /></label>
         </div>
         <label className="grid gap-1.5 text-sm font-medium">카테고리<Input maxLength={120} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="personal" /></label>
-        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={saving} type="submit" className="bg-[#183D35] hover:bg-[#28564A]">{saving && <Loader2 className="animate-spin" />}{task ? "변경 저장" : "할 일 추가"}</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={saving} type="submit" className="bg-[#2B3561] hover:bg-[#3A4578]">{saving && <Loader2 className="animate-spin" />}{task ? "변경 저장" : "할 일 추가"}</Button></DialogFooter>
       </form>
     </DialogContent>
   </Dialog>

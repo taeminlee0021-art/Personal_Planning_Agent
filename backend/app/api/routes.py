@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, Path, Request, Response, Body
 from app.api.schemas import (
     AgentMessage, AgentResponse, BodySettingsResponse, DietReviewResponse, EmptyDecision, ErrorResponse, FoodNutritionResponse, MealEntryResponse, PlanResponse, PlanStatusUpdate, PreferencesResponse,
     RecurringTaskResponse, ScheduleResponse, ScheduleStatusUpdate, TaskCreate, TaskUpdate, TodayItemResponse,
-    TodayItemsReorder, TodayItemUpdate, WeightRecordResponse, WorkoutSessionResponse, WorkoutSettingsResponse, WorkoutWeekResponse, GratitudeEntryResponse,
+    TodayItemsReorder, TodayItemUpdate, WeightRecordResponse, WorkoutSessionResponse, WorkoutSettingsResponse, WorkoutWeekResponse, GratitudeEntryResponse, PhotoResponse,
 )
 from app.actions import ActionResponse, ActionService, ApprovalSelection
-from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput, GratitudeEntryInput
+from app.inputs import BodySettingsInput, MealEntryInput, RecurringTaskInput, ScheduleInput, TodayItemInput, WeightRecordInput, WorkoutSessionInput, WorkoutSettingsInput, GratitudeEntryInput, PhotoInput, PhotoCaptionInput, PhotosReorderInput
 from app.models import Task
 from app.planning import Preferences
 from app.storage_service import DatabasePlanningService
@@ -259,6 +259,32 @@ def update_gratitude_entry(identifier: Identifier, value: GratitudeEntryInput, s
 @router.delete("/gratitude/{identifier}", status_code=204, tags=["Gratitude"])
 def delete_gratitude_entry(identifier: Identifier, service: Service):
     service.delete_gratitude_entry(identifier)
+    return Response(status_code=204)
+
+
+@router.get("/photos", response_model=list[PhotoResponse], tags=["Photos"])
+def photos(service: Service):
+    return service.list_photos()
+
+
+@router.post("/photos", response_model=PhotoResponse, status_code=201, tags=["Photos"])
+def create_photo(value: PhotoInput, service: Service):
+    return service.add_photo(value)
+
+
+@router.post("/photos/reorder", response_model=list[PhotoResponse], tags=["Photos"])
+def reorder_photos(value: PhotosReorderInput, service: Service):
+    return service.reorder_photos(value.ordered_ids)
+
+
+@router.put("/photos/{identifier}", response_model=PhotoResponse, tags=["Photos"])
+def update_photo(identifier: Identifier, value: PhotoCaptionInput, service: Service):
+    return service.update_photo_caption(identifier, value)
+
+
+@router.delete("/photos/{identifier}", status_code=204, tags=["Photos"])
+def delete_photo(identifier: Identifier, service: Service):
+    service.delete_photo(identifier)
     return Response(status_code=204)
 
 

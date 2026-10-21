@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, Date, DateTime, Float, ForeignKey, Integer,
-    MetaData, String, Table, Time, URL, JSON, UniqueConstraint, create_engine, event, inspect, select,
+    MetaData, String, Table, Text, Time, URL, JSON, UniqueConstraint, create_engine, event, inspect, select,
 )
 from sqlalchemy.types import TypeDecorator
 from app.errors import NotFoundError
@@ -235,6 +235,18 @@ gratitude_entries = Table(
     Column("id", Integer, primary_key=True),
     Column("entry_date", Date, nullable=False, index=True),
     Column("content", String(2000), nullable=False),
+    Column("created_at", UTCDateTime(), nullable=False),
+    Column("updated_at", UTCDateTime(), nullable=False),
+    sqlite_autoincrement=True,
+)
+
+photos = Table(
+    "photos", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("caption", String(120), nullable=False),
+    Column("order_index", Integer, nullable=False),
+    # Browser-resized image stored inline as a data URL; hosting has no persistent disk.
+    Column("image_data", Text, nullable=False),
     Column("created_at", UTCDateTime(), nullable=False),
     Column("updated_at", UTCDateTime(), nullable=False),
     sqlite_autoincrement=True,

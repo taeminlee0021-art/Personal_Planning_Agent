@@ -1,4 +1,4 @@
-import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek, GratitudeEntry, GratitudeDraft } from "@/lib/types"
+import type { ActionSelection, AgentResponse, BodySettings, DietReview, FixedSchedule, FoodNutrition, MealDraft, MealEntry, PendingAction, Photo, PhotoDraft, Plan, Preferences, RecurringTask, RecurringTaskDraft, ScheduleDraft, Task, TaskDraft, TodayItem, WeightRecord, WorkoutSession, WorkoutSessionDraft, WorkoutSettings, WorkoutWeek, GratitudeEntry, GratitudeDraft } from "@/lib/types"
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -60,6 +60,11 @@ export const api = {
   createGratitudeEntry: (value: GratitudeDraft) => request<GratitudeEntry>("/gratitude", { method: "POST", body: JSON.stringify(value) }),
   updateGratitudeEntry: (id: number, value: GratitudeDraft) => request<GratitudeEntry>(`/gratitude/${id}`, { method: "PUT", body: JSON.stringify(value) }),
   deleteGratitudeEntry: (id: number) => request<void>(`/gratitude/${id}`, { method: "DELETE" }),
+  photos: () => request<Photo[]>("/photos"),
+  createPhoto: (value: PhotoDraft) => request<Photo>("/photos", { method: "POST", body: JSON.stringify(value) }),
+  updatePhoto: (id: number, caption: string) => request<Photo>(`/photos/${id}`, { method: "PUT", body: JSON.stringify({ caption }) }),
+  reorderPhotos: (orderedIds: number[]) => request<Photo[]>("/photos/reorder", { method: "POST", body: JSON.stringify({ ordered_ids: orderedIds }) }),
+  deletePhoto: (id: number) => request<void>(`/photos/${id}`, { method: "DELETE" }),
   workoutSettings: () => request<WorkoutSettings>("/body/workout-settings"),
   updateWorkoutSettings: (value: WorkoutSettings) => request<WorkoutSettings>("/body/workout-settings", { method: "PUT", body: JSON.stringify(value) }),
   workoutWeek: () => request<WorkoutWeek>("/body/workouts/week"),
