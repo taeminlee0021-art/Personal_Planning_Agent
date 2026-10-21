@@ -1933,3 +1933,10 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   Tasks, Week, Health and Settings views at 1400 px and 375 px, plus photo
   upload via the API, caption edit, reorder and delete through the UI; the
   temporary photos and task were deleted afterwards.
+- Deployment (2026-10-21): GitHub main `9db9406`; Render
+  `personal-planning-agent-api-64ij` manual deploy of `9db9406` is Live
+  (`/health` 200, OpenAPI lists `/api/photos` and `/api/photos/reorder`,
+  direct unauthenticated `/api/photos` returns 401); Cloudflare Worker
+  redeployed as `ccc8e453` with the APP_INTERNAL_TOKEN secret retained and
+  `/`, `/api/health`, `/api/photos` still 302 to Access without login. The
+  ChatGPT Sites frontend still needs the owner's Codex publish from main.
