@@ -1966,5 +1966,12 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
 - Verification: frontend tsc, ESLint and the Vinext production build passed on
   Node 26.13 / pnpm 11.19 (installed on this PC for the release). Cloudflare
   deploy dry run passed with only the BACKEND_API_URL binding.
-- Deployment: pending at the time of writing; the Worker deploy and GitHub push
-  are recorded below when they complete. Render backend unchanged.
+- Deployment (2026-11-10): the owner ran `node scripts/deploy-cloudflare.mjs
+  --skip-build` from this PC after `wrangler login`; the Worker is live as
+  version `afaaf5cf` with the APP_INTERNAL_TOKEN secret retained and `/`,
+  `/api/health`, `/api/tasks` still 302 to Access without login. GitHub main
+  carries the fix commit `136ece2`. The Render backend code is unchanged (the
+  owner also triggered a manual Render redeploy of 086e99e, which went Live).
+  The ChatGPT Sites frontend still needs the owner's Codex publish from main.
+  Final confirmation: open the app after the free instance has slept 15 min
+  and verify it loads within about two minutes.
