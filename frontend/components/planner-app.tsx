@@ -113,19 +113,30 @@ export function PlannerApp() {
   const waitForBackend = useCallback(async () => {
     setServerState("checking")
     const deadline = Date.now() + 180_000
+    let lastWake = 0
     while (Date.now() < deadline) {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 12_000)
+      let wakeUrl: string | undefined
       try {
-        const result = await api.health(controller.signal)
-        if (result.status === "ok") {
+        const response = await fetch("/api/health", { signal: controller.signal, cache: "no-store" })
+        const body = await response.json().catch(() => null) as { status?: string; wake_url?: string | null } | null
+        if (response.ok && body?.status === "ok") {
           setServerState("ready")
           return
         }
+        wakeUrl = body?.wake_url ?? undefined
       } catch {
         // A sleeping Render instance can exceed one request's time limit.
       } finally {
         window.clearTimeout(timeout)
+      }
+      // Render answers the Worker's relayed requests with 429 while the free instance
+      // sleeps and never starts it, so the browser pings the public health URL itself.
+      // The opaque no-cors response is ignored; only the wake-up matters.
+      if (wakeUrl?.startsWith("https://") && Date.now() - lastWake > 30_000) {
+        lastWake = Date.now()
+        void fetch(wakeUrl, { mode: "no-cors", cache: "no-store" }).catch(() => undefined)
       }
       await new Promise((resolve) => window.setTimeout(resolve, 3_000))
     }

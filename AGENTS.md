@@ -1940,3 +1940,31 @@ statements that the responsive frontend is absent. Phase 7 has not been started.
   redeployed as `ccc8e453` with the APP_INTERNAL_TOKEN secret retained and
   `/`, `/api/health`, `/api/photos` still 302 to Access without login. The
   ChatGPT Sites frontend still needs the owner's Codex publish from main.
+
+## 2026-11-10 - Render wake-up through the browser
+
+- Since 2026-11-08 the owner repeatedly saw "서버를 준비하지 못했습니다" after the
+  3-minute health wait, even though the Render free service was healthy. On
+  2026-11-08 the instance also failed to wake for 24 h until a manual
+  "Deploy latest commit" on `personal-planning-agent-api-64ij` (086e99e, same
+  backend code) restored it.
+- Diagnosis from Render, Cloudflare Access and Workers logs: while the free
+  instance sleeps, every `/api/health` relayed by the Worker returns in ~15 ms
+  with upstream status 429 (Render `x-render-routing: hibernate-rate-limited`
+  behaviour, also reported by other projects for proxied or cron traffic) and
+  the instance is never started; no request reaches Render. Direct requests
+  from the owner's PC wake it in 46-52 s of boot plus 12-17 s scheduling.
+  A controlled test with 12-second-aborted direct requests also woke it, so
+  the client timeout was not the cause; Access sessions were valid.
+- Fix: `/api/health` now answers 503 `{status:"starting", upstream, routing,
+  wake_url}` for any non-OK or unreachable upstream, logging the upstream
+  status for Workers observability. `wake_url` is the public https backend
+  `/health`. The browser readiness loop pings that URL once per 30 s with
+  `mode: "no-cors"` (opaque response ignored) so the wake-up request comes from
+  the user's own IP, while `/api/health` keeps polling through the Worker.
+  /health is unauthenticated; /api routes keep the server-side token.
+- Verification: frontend tsc, ESLint and the Vinext production build passed on
+  Node 26.13 / pnpm 11.19 (installed on this PC for the release). Cloudflare
+  deploy dry run passed with only the BACKEND_API_URL binding.
+- Deployment: pending at the time of writing; the Worker deploy and GitHub push
+  are recorded below when they complete. Render backend unchanged.
